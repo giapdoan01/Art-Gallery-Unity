@@ -23,6 +23,8 @@ public class ImageData
     public int frameUse;
     public string hash; // Hash từ server
     public long lastModified; // Timestamp
+    public string author; // Thêm trường author
+    public string description; // Thêm trường description
 }
 
 [Serializable]

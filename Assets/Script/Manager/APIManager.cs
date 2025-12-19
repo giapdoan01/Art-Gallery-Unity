@@ -34,7 +34,7 @@ public class ImageActionResponse
 public class APIManager : MonoBehaviour
 {
     private static APIManager _instance;
-    
+
     [Header("Server Settings")]
     [SerializeField] private string baseUrl = "https://gallery-server-mutilplayer.onrender.com";
     [SerializeField] private string apiUrl = "https://gallery-server-mutilplayer.onrender.com/api";
@@ -42,14 +42,14 @@ public class APIManager : MonoBehaviour
     [SerializeField] private float requestTimeout = 10f;
     [SerializeField] private int maxRetries = 3;
     [SerializeField] private float retryDelay = 2f;
-    
+
     [Header("Debug")]
     [SerializeField] private bool logRequests = true;
     [SerializeField] private bool logResponses = false;
-    
+
     private int currentRequests = 0;
     private const int MAX_CONCURRENT_REQUESTS = 5;
-    
+
     public delegate void ImageResponseCallback(bool success, ImageData image, string error);
     public delegate void ImagesResponseCallback(bool success, List<ImageData> images, string error);
     public delegate void ActionResponseCallback(bool success, string message);
@@ -81,16 +81,17 @@ public class APIManager : MonoBehaviour
 
         if (logRequests) Debug.Log("[APIManager] Initialized");
     }
-    
+
     #region GET APIs
-    
+
     /// <summary>
     /// Lấy ảnh theo frame ID - Endpoint: GET /admin/getimage/:frame
     /// </summary>
     public void GetImageByFrame(int frameId, ImageResponseCallback callback)
     {
         string url = $"{adminUrl}/getimage/{frameId}";
-        StartCoroutine(GetRequest<ImageResponse>(url, (success, response, error) => {
+        StartCoroutine(GetRequest<ImageResponse>(url, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.data, null);
@@ -101,14 +102,15 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     /// <summary>
     /// Lấy tất cả các ảnh - Endpoint: GET /api/images
     /// </summary>
     public void GetAllImages(ImagesResponseCallback callback)
     {
         string url = $"{apiUrl}/images";
-        StartCoroutine(GetRequest<ImagesResponse>(url, (success, response, error) => {
+        StartCoroutine(GetRequest<ImagesResponse>(url, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.data, null);
@@ -119,14 +121,15 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     /// <summary>
     /// Lấy ảnh theo ID - Endpoint: GET /api/images/:id
     /// </summary>
     public void GetImageById(int imageId, ImageResponseCallback callback)
     {
         string url = $"{apiUrl}/images/{imageId}";
-        StartCoroutine(GetRequest<ImageResponse>(url, (success, response, error) => {
+        StartCoroutine(GetRequest<ImageResponse>(url, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.data, null);
@@ -137,30 +140,31 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     #endregion
-    
+
     #region POST APIs
-    
+
     /// <summary>
     /// Tạo ảnh mới với upload file - Endpoint: POST /api/images
     /// </summary>
     public void CreateImage(string name, int frameUse, Texture2D imageTexture, ImageResponseCallback callback)
     {
         string url = $"{apiUrl}/images";
-        
+
         // Chuẩn bị form data với file ảnh
         WWWForm form = new WWWForm();
         form.AddField("name", name);
         form.AddField("frameUse", frameUse.ToString());
-        
+
         if (imageTexture != null)
         {
             byte[] imageBytes = imageTexture.EncodeToPNG();
             form.AddBinaryData("image", imageBytes, "image.png", "image/png");
         }
-        
-        StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) => {
+
+        StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.data, null);
@@ -171,7 +175,7 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     /// <summary>
     /// Tạo ảnh mới từ đường dẫn file - Endpoint: POST /api/images
     /// </summary>
@@ -182,20 +186,21 @@ public class APIManager : MonoBehaviour
             callback?.Invoke(false, null, $"File not found: {localFilePath}");
             return;
         }
-        
+
         try
         {
             byte[] imageBytes = File.ReadAllBytes(localFilePath);
             string mimeType = GetMimeTypeFromExtension(Path.GetExtension(localFilePath));
             string fileName = Path.GetFileName(localFilePath);
-            
+
             string url = $"{apiUrl}/images";
             WWWForm form = new WWWForm();
             form.AddField("name", name);
             form.AddField("frameUse", frameUse.ToString());
             form.AddBinaryData("image", imageBytes, fileName, mimeType);
-            
-            StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) => {
+
+            StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
+            {
                 if (success && response != null && response.success)
                 {
                     callback?.Invoke(true, response.data, null);
@@ -211,29 +216,30 @@ public class APIManager : MonoBehaviour
             callback?.Invoke(false, null, $"Error reading file: {ex.Message}");
         }
     }
-    
+
     #endregion
-    
+
     #region PUT APIs
-    
+
     /// <summary>
     /// Cập nhật ảnh theo ID - Endpoint: PUT /api/images/:id
     /// </summary>
     public void UpdateImageById(int imageId, string name, int frameUse, Texture2D imageTexture, ImageResponseCallback callback)
     {
         string url = $"{apiUrl}/images/{imageId}";
-        
+
         WWWForm form = new WWWForm();
         form.AddField("name", name);
         form.AddField("frameUse", frameUse.ToString());
-        
+
         if (imageTexture != null)
         {
             byte[] imageBytes = imageTexture.EncodeToPNG();
             form.AddBinaryData("image", imageBytes, "image.png", "image/png");
         }
-        
-        StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) => {
+
+        StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.data, null);
@@ -244,24 +250,32 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     /// <summary>
     /// Cập nhật ảnh theo frame - Endpoint: PUT /api/images/frame/:frame
     /// </summary>
-    public void UpdateImageByFrame(int frameId, string name, Texture2D imageTexture, ImageResponseCallback callback)
+    public void UpdateImageByFrame(int frameId, string name, string author, string description, Texture2D imageTexture, ImageResponseCallback callback)
     {
         string url = $"{apiUrl}/images/frame/{frameId}";
-        
+
         WWWForm form = new WWWForm();
         form.AddField("name", name);
-        
+
+        // Thêm author và description vào form
+        if (!string.IsNullOrEmpty(author))
+            form.AddField("author", author);
+
+        if (!string.IsNullOrEmpty(description))
+            form.AddField("description", description);
+
         if (imageTexture != null)
         {
             byte[] imageBytes = imageTexture.EncodeToPNG();
             form.AddBinaryData("image", imageBytes, "image.png", "image/png");
         }
-        
-        StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) => {
+
+        StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.data, null);
@@ -272,30 +286,39 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     /// <summary>
     /// Cập nhật ảnh theo frame từ đường dẫn file - Endpoint: PUT /api/images/frame/:frame
     /// </summary>
-    public void UpdateImageByFrameFromPath(int frameId, string name, string localFilePath, ImageResponseCallback callback)
+    public void UpdateImageByFrameFromPath(int frameId, string name, string author, string description, string localFilePath, ImageResponseCallback callback)
     {
         if (!File.Exists(localFilePath))
         {
             callback?.Invoke(false, null, $"File not found: {localFilePath}");
             return;
         }
-        
+
         try
         {
             byte[] imageBytes = File.ReadAllBytes(localFilePath);
             string mimeType = GetMimeTypeFromExtension(Path.GetExtension(localFilePath));
             string fileName = Path.GetFileName(localFilePath);
-            
+
             string url = $"{apiUrl}/images/frame/{frameId}";
             WWWForm form = new WWWForm();
             form.AddField("name", name);
+
+            // Thêm author và description vào form
+            if (!string.IsNullOrEmpty(author))
+                form.AddField("author", author);
+
+            if (!string.IsNullOrEmpty(description))
+                form.AddField("description", description);
+
             form.AddBinaryData("image", imageBytes, fileName, mimeType);
-            
-            StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) => {
+
+            StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
+            {
                 if (success && response != null && response.success)
                 {
                     callback?.Invoke(true, response.data, null);
@@ -311,19 +334,20 @@ public class APIManager : MonoBehaviour
             callback?.Invoke(false, null, $"Error reading file: {ex.Message}");
         }
     }
-    
+
     #endregion
-    
+
     #region DELETE APIs
-    
+
     /// <summary>
     /// Xóa ảnh theo ID - Endpoint: DELETE /api/images/:id
     /// </summary>
     public void DeleteImageById(int imageId, ActionResponseCallback callback)
     {
         string url = $"{apiUrl}/images/{imageId}";
-        
-        StartCoroutine(DeleteRequest<ImageActionResponse>(url, (success, response, error) => {
+
+        StartCoroutine(DeleteRequest<ImageActionResponse>(url, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.message);
@@ -334,15 +358,16 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     /// <summary>
     /// Xóa ảnh theo frame - Endpoint: DELETE /api/images/frame/:frame
     /// </summary>
     public void DeleteImageByFrame(int frameId, ActionResponseCallback callback)
     {
         string url = $"{apiUrl}/images/frame/{frameId}";
-        
-        StartCoroutine(DeleteRequest<ImageActionResponse>(url, (success, response, error) => {
+
+        StartCoroutine(DeleteRequest<ImageActionResponse>(url, (success, response, error) =>
+        {
             if (success && response != null && response.success)
             {
                 callback?.Invoke(true, response.message);
@@ -353,11 +378,11 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-    
+
     #endregion
-    
+
     #region Helper Methods
-    
+
     /// <summary>
     /// GET Request generic với retry
     /// </summary>
@@ -367,17 +392,17 @@ public class APIManager : MonoBehaviour
         {
             yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
         }
-        
+
         currentRequests++;
-        
+
         if (logRequests) Debug.Log($"[APIManager] GET Request: {url}");
-        
+
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
             request.timeout = Mathf.RoundToInt(requestTimeout);
-            
+
             yield return request.SendWebRequest();
-            
+
             if (request.result != UnityWebRequest.Result.Success)
             {
                 if (retryCount < maxRetries)
@@ -388,17 +413,17 @@ public class APIManager : MonoBehaviour
                     yield return StartCoroutine(GetRequest<T>(url, callback, retryCount + 1));
                     yield break;
                 }
-                
+
                 Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
                 callback?.Invoke(false, null, request.error);
                 currentRequests--;
                 yield break;
             }
-            
+
             string responseText = request.downloadHandler.text;
-            
+
             if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-            
+
             try
             {
                 T response = JsonUtility.FromJson<T>(responseText);
@@ -409,11 +434,11 @@ public class APIManager : MonoBehaviour
                 Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
                 callback?.Invoke(false, null, $"Parsing error: {e.Message}");
             }
-            
+
             currentRequests--;
         }
     }
-    
+
     /// <summary>
     /// POST Request generic với retry
     /// </summary>
@@ -423,17 +448,17 @@ public class APIManager : MonoBehaviour
         {
             yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
         }
-        
+
         currentRequests++;
-        
+
         if (logRequests) Debug.Log($"[APIManager] POST Request: {url}");
-        
+
         using (UnityWebRequest request = UnityWebRequest.Post(url, form))
         {
             request.timeout = Mathf.RoundToInt(requestTimeout);
-            
+
             yield return request.SendWebRequest();
-            
+
             if (request.result != UnityWebRequest.Result.Success)
             {
                 if (retryCount < maxRetries)
@@ -444,17 +469,17 @@ public class APIManager : MonoBehaviour
                     yield return StartCoroutine(PostRequest<T>(url, form, callback, retryCount + 1));
                     yield break;
                 }
-                
+
                 Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
                 callback?.Invoke(false, null, request.error);
                 currentRequests--;
                 yield break;
             }
-            
+
             string responseText = request.downloadHandler.text;
-            
+
             if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-            
+
             try
             {
                 T response = JsonUtility.FromJson<T>(responseText);
@@ -465,11 +490,11 @@ public class APIManager : MonoBehaviour
                 Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
                 callback?.Invoke(false, null, $"Parsing error: {e.Message}");
             }
-            
+
             currentRequests--;
         }
     }
-    
+
     /// <summary>
     /// PUT Request generic với retry
     /// </summary>
@@ -479,18 +504,18 @@ public class APIManager : MonoBehaviour
         {
             yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
         }
-        
+
         currentRequests++;
-        
+
         if (logRequests) Debug.Log($"[APIManager] PUT Request: {url}");
-        
+
         using (UnityWebRequest request = UnityWebRequest.Post(url, form))
         {
             request.method = "PUT";
             request.timeout = Mathf.RoundToInt(requestTimeout);
-            
+
             yield return request.SendWebRequest();
-            
+
             if (request.result != UnityWebRequest.Result.Success)
             {
                 if (retryCount < maxRetries)
@@ -501,17 +526,17 @@ public class APIManager : MonoBehaviour
                     yield return StartCoroutine(PutRequest<T>(url, form, callback, retryCount + 1));
                     yield break;
                 }
-                
+
                 Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
                 callback?.Invoke(false, null, request.error);
                 currentRequests--;
                 yield break;
             }
-            
+
             string responseText = request.downloadHandler.text;
-            
+
             if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-            
+
             try
             {
                 T response = JsonUtility.FromJson<T>(responseText);
@@ -522,11 +547,11 @@ public class APIManager : MonoBehaviour
                 Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
                 callback?.Invoke(false, null, $"Parsing error: {e.Message}");
             }
-            
+
             currentRequests--;
         }
     }
-    
+
     /// <summary>
     /// DELETE Request generic với retry
     /// </summary>
@@ -536,17 +561,17 @@ public class APIManager : MonoBehaviour
         {
             yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
         }
-        
+
         currentRequests++;
-        
+
         if (logRequests) Debug.Log($"[APIManager] DELETE Request: {url}");
-        
+
         using (UnityWebRequest request = UnityWebRequest.Delete(url))
         {
             request.timeout = Mathf.RoundToInt(requestTimeout);
-            
+
             yield return request.SendWebRequest();
-            
+
             if (request.result != UnityWebRequest.Result.Success)
             {
                 if (retryCount < maxRetries)
@@ -557,17 +582,17 @@ public class APIManager : MonoBehaviour
                     yield return StartCoroutine(DeleteRequest<T>(url, callback, retryCount + 1));
                     yield break;
                 }
-                
+
                 Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
                 callback?.Invoke(false, null, request.error);
                 currentRequests--;
                 yield break;
             }
-            
+
             string responseText = request.downloadHandler.text;
-            
+
             if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-            
+
             try
             {
                 T response = JsonUtility.FromJson<T>(responseText);
@@ -578,18 +603,18 @@ public class APIManager : MonoBehaviour
                 Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
                 callback?.Invoke(false, null, $"Parsing error: {e.Message}");
             }
-            
+
             currentRequests--;
         }
     }
-    
+
     /// <summary>
     /// Lấy MIME type từ extension của file
     /// </summary>
     private string GetMimeTypeFromExtension(string extension)
     {
         extension = extension.ToLower().TrimStart('.');
-        
+
         switch (extension)
         {
             case "jpg":
@@ -607,11 +632,11 @@ public class APIManager : MonoBehaviour
                 return "application/octet-stream";
         }
     }
-    
+
     #endregion
-    
+
     #region Utils
-    
+
     /// <summary>
     /// Phương thức trợ giúp tải Texture2D từ URL
     /// </summary>
@@ -619,13 +644,13 @@ public class APIManager : MonoBehaviour
     {
         StartCoroutine(DownloadTexture(url, callback));
     }
-    
+
     private IEnumerator DownloadTexture(string url, Action<Texture2D> callback)
     {
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(url))
         {
             yield return request.SendWebRequest();
-            
+
             if (request.result == UnityWebRequest.Result.Success)
             {
                 Texture2D texture = DownloadHandlerTexture.GetContent(request);
@@ -638,7 +663,7 @@ public class APIManager : MonoBehaviour
             }
         }
     }
-    
+
     /// <summary>
     /// Chuyển đổi ảnh từ đường dẫn thành Texture2D
     /// </summary>
@@ -665,31 +690,31 @@ public class APIManager : MonoBehaviour
             return null;
         }
     }
-    
+
     /// <summary>
     /// Chuyển đổi Sprite thành Texture2D
     /// </summary>
     public Texture2D SpriteToTexture2D(Sprite sprite)
     {
         if (sprite == null) return null;
-        
+
         try
         {
             Texture2D texture = new Texture2D(
-                (int)sprite.rect.width, 
-                (int)sprite.rect.height, 
-                TextureFormat.RGBA32, 
+                (int)sprite.rect.width,
+                (int)sprite.rect.height,
+                TextureFormat.RGBA32,
                 false);
-            
+
             var pixels = sprite.texture.GetPixels(
-                (int)sprite.rect.x, 
-                (int)sprite.rect.y, 
-                (int)sprite.rect.width, 
+                (int)sprite.rect.x,
+                (int)sprite.rect.y,
+                (int)sprite.rect.width,
                 (int)sprite.rect.height);
-                
+
             texture.SetPixels(pixels);
             texture.Apply();
-            
+
             return texture;
         }
         catch (Exception ex)
@@ -698,9 +723,9 @@ public class APIManager : MonoBehaviour
             return null;
         }
     }
-    
+
     #endregion
-    
+
     /// <summary>
     /// Lấy thời gian từ server
     /// </summary>
@@ -709,14 +734,14 @@ public class APIManager : MonoBehaviour
         // Thực hiện một request đơn giản để lấy header Date từ server
         StartCoroutine(GetServerTimeCoroutine(callback));
     }
-    
+
     private IEnumerator GetServerTimeCoroutine(Action<DateTime?> callback)
     {
         using (UnityWebRequest request = UnityWebRequest.Get(baseUrl))
         {
             request.timeout = 5;
             yield return request.SendWebRequest();
-            
+
             if (request.result == UnityWebRequest.Result.Success)
             {
                 string dateStr = request.GetResponseHeader("Date");
@@ -742,19 +767,19 @@ public class APIManager : MonoBehaviour
             }
         }
     }
-    
+
     // Public getter cho các URL
     public string BaseURL => baseUrl;
     public string ApiURL => apiUrl;
     public string AdminURL => adminUrl;
-    
+
     // Setter để có thể thay đổi URLs trong runtime nếu cần
     public void SetURLs(string newBaseUrl)
     {
         baseUrl = newBaseUrl;
         apiUrl = $"{newBaseUrl}/api";
         adminUrl = $"{newBaseUrl}/admin";
-        
+
         if (logRequests) Debug.Log($"[APIManager] URLs updated. Base: {baseUrl}");
     }
 }

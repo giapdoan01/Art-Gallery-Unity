@@ -19,6 +19,8 @@ public class ImageEditPopup : MonoBehaviour
     [SerializeField] private TMP_InputField nameInput;
     [SerializeField] private TMP_InputField frameInput; // Read-only
     [SerializeField] private TMP_InputField imageFileInput; // Hiển thị tên file
+    [SerializeField] private TMP_InputField authorInput; // Thêm trường author
+    [SerializeField] private TMP_InputField descriptionInput; // Thêm trường description
     [SerializeField] private Button browseButton;
     [SerializeField] private Button saveButton;
     [SerializeField] private Button cancelButton;
@@ -129,6 +131,19 @@ public class ImageEditPopup : MonoBehaviour
         {
             string fileName = GetFileNameFromUrl(imageData.url);
             imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
+        }
+        
+        // Hiển thị thông tin author và description nếu có
+        if (authorInput != null)
+        {
+            // Sử dụng thuộc tính author nếu có, không thì để trống
+            authorInput.text = imageData.author ?? "";
+        }
+        
+        if (descriptionInput != null)
+        {
+            // Sử dụng thuộc tính description nếu có, không thì để trống
+            descriptionInput.text = imageData.description ?? "";
         }
 
         // Reset status
@@ -286,6 +301,10 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         string newName = nameInput != null ? nameInput.text.Trim() : currentImageData.name;
+        
+        // Lấy thông tin author và description từ input fields
+        string author = authorInput != null ? authorInput.text.Trim() : "";
+        string description = descriptionInput != null ? descriptionInput.text.Trim() : "";
 
         if (string.IsNullOrWhiteSpace(newName))
         {
@@ -295,7 +314,7 @@ public class ImageEditPopup : MonoBehaviour
 
         UpdateStatus("Saving...");
 
-        if (showDebug) Debug.Log($"[ImageEditPopup] Saving - Name: {newName}, Frame: {currentImageData.frameUse}");
+        if (showDebug) Debug.Log($"[ImageEditPopup] Saving - Name: {newName}, Frame: {currentImageData.frameUse}, Author: {author}");
 
         // Nếu có chọn ảnh mới
         if (!string.IsNullOrEmpty(selectedImagePath))
@@ -305,18 +324,22 @@ public class ImageEditPopup : MonoBehaviour
             APIManager.Instance.UpdateImageByFrameFromPath(
                 currentImageData.frameUse,
                 newName,
+                author,
+                description,
                 selectedImagePath,
                 OnUpdateComplete
             );
         }
         else
         {
-            // Chỉ update tên
-            if (showDebug) Debug.Log("[ImageEditPopup] Updating name only");
+            // Chỉ update thông tin (không thay đổi ảnh)
+            if (showDebug) Debug.Log("[ImageEditPopup] Updating info only");
 
             APIManager.Instance.UpdateImageByFrame(
                 currentImageData.frameUse,
                 newName,
+                author,
+                description,
                 null,
                 OnUpdateComplete
             );
