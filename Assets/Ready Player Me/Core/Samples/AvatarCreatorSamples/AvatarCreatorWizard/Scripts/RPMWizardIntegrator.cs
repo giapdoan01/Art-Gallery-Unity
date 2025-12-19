@@ -32,7 +32,7 @@ public class RPMWizardIntegrator : MonoBehaviour
     public string LastCreatedAvatarUrl => lastCreatedAvatarUrl;
 
     // Scene để quay lại sau khi tạo avatar
-    private string menuSceneName = "MenuScene";
+    private string menuSceneName = "";
 
     // Tham chiếu đến AvatarCreatorStateMachine
     private AvatarCreatorStateMachine avatarCreatorStateMachine;
@@ -47,6 +47,13 @@ public class RPMWizardIntegrator : MonoBehaviour
 
         _instance = this;
         DontDestroyOnLoad(gameObject);
+        
+        // Khởi tạo menuSceneName với scene hiện tại nếu nó chứa "MenuScene"
+        string currentScene = SceneManager.GetActiveScene().name;
+        if (currentScene.Contains("MenuScene"))
+        {
+            menuSceneName = currentScene;
+        }
     }
 
     private void OnEnable()
@@ -61,6 +68,13 @@ public class RPMWizardIntegrator : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        // Lưu tên scene chứa "MenuScene" để sau này có thể quay lại
+        if (scene.name.Contains("MenuScene"))
+        {
+            menuSceneName = scene.name;
+            Debug.Log($"RPMWizardIntegrator: Detected menu scene: {menuSceneName}");
+        }
+        
         // Tìm và đăng ký với AvatarCreatorStateMachine khi vào scene tạo avatar
         if (scene.name.Contains("AvatarCreatorWizard") || scene.name.Contains("AvatarCreatorWizard"))
         {
@@ -97,6 +111,34 @@ public class RPMWizardIntegrator : MonoBehaviour
     private System.Collections.IEnumerator ReturnToMenuScene()
     {
         yield return new WaitForSeconds(1.5f); // Chờ một chút để hiệu ứng hoàn thành
+        
+        if (string.IsNullOrEmpty(menuSceneName))
+        {
+            Debug.LogWarning("RPMWizardIntegrator: Menu scene name is empty, trying to find a scene containing 'MenuScene'");
+            
+            // Tìm scene có chứa "MenuScene" trong build settings
+            for (int i = 0; i < SceneManager.sceneCountInBuildSettings; i++)
+            {
+                string scenePath = SceneUtility.GetScenePathByBuildIndex(i);
+                string sceneName = System.IO.Path.GetFileNameWithoutExtension(scenePath);
+                
+                if (sceneName.Contains("MenuScene"))
+                {
+                    menuSceneName = sceneName;
+                    break;
+                }
+            }
+            
+            // Nếu vẫn không tìm thấy, dùng scene index 0
+            if (string.IsNullOrEmpty(menuSceneName))
+            {
+                Debug.LogError("RPMWizardIntegrator: No menu scene found, returning to first scene");
+                SceneManager.LoadScene(0);
+                yield break;
+            }
+        }
+        
+        Debug.Log($"RPMWizardIntegrator: Returning to menu scene: {menuSceneName}");
         SceneManager.LoadScene(menuSceneName);
     }
 
@@ -115,8 +157,13 @@ public class RPMWizardIntegrator : MonoBehaviour
     // Phương thức để mở Avatar Creator
     public void OpenAvatarCreator()
     {
-        // Lưu tên scene hiện tại làm scene menu
-        menuSceneName = SceneManager.GetActiveScene().name;
+        // Lưu tên scene hiện tại nếu nó chứa "MenuScene"
+        string currentScene = SceneManager.GetActiveScene().name;
+        if (currentScene.Contains("MenuScene"))
+        {
+            menuSceneName = currentScene;
+            Debug.Log($"RPMWizardIntegrator: Set menu scene to current scene: {menuSceneName}");
+        }
 
         // Tìm scene Avatar Creator trong build settings
         for (int i = 0; i < SceneManager.sceneCountInBuildSettings; i++)

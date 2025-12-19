@@ -31,7 +31,7 @@ public class ImageEditPopup : MonoBehaviour
     private string selectedImagePath;
     private PlayerController[] playerControllers;
     private System.Action onHideCallback;
-    private ImageItem currentSelectedImageItem; // Thêm tham chiếu đến ImageItem đang được chọn
+    private ImageItem currentSelectedImageItem; 
 
     private void Awake()
     {
@@ -74,6 +74,36 @@ public class ImageEditPopup : MonoBehaviour
         Hide();
     }
 
+    // Phương thức trích xuất tên file từ URL
+    private string GetFileNameFromUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url))
+            return string.Empty;
+        
+        try
+        {
+            // Tách URL theo dấu "/" và lấy phần cuối cùng
+            string[] parts = url.Split('/');
+            string fileName = parts[parts.Length - 1];
+            
+            // Xử lý thêm nếu có tham số query trong URL
+            if (fileName.Contains("?"))
+            {
+                fileName = fileName.Split('?')[0];
+            }
+            
+            // Giải mã URL nếu cần
+            fileName = Uri.UnescapeDataString(fileName);
+            
+            return fileName;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ImageEditPopup] Error extracting file name from URL: {ex.Message}");
+            return Path.GetFileName(url); // Fallback, dùng Path.GetFileName
+        }
+    }
+
     public void Show(ImageData imageData, ImageItem sourceImageItem = null)
     {
         currentImageData = imageData;
@@ -94,10 +124,11 @@ public class ImageEditPopup : MonoBehaviour
             frameInput.text = imageData.frameUse.ToString();
         }
 
-        // Clear image file
+        // Hiển thị tên file ảnh từ URL
         if (imageFileInput != null)
         {
-            imageFileInput.text = "No file selected";
+            string fileName = GetFileNameFromUrl(imageData.url);
+            imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
         }
 
         // Reset status
@@ -300,11 +331,25 @@ public class ImageEditPopup : MonoBehaviour
 
             if (showDebug) Debug.Log("[ImageEditPopup] Update successful");
 
-            // Refresh gallery - FIX: Dùng FindFirstObjectByType thay vì FindObjectOfType
+            // Refresh gallery
             var gallery = FindFirstObjectByType<ImageGalleryContainer>();
             if (gallery != null)
             {
                 gallery.RefreshGallery();
+            }
+            
+            // Refresh tất cả các ArtFrame hiển thị ảnh này
+            if (updatedData != null)
+            {
+                // 1. Làm mới cache trong ArtManager
+                if (ArtManager.Instance != null)
+                {
+                    if (showDebug) Debug.Log($"[ImageEditPopup] Force refresh frame {updatedData.frameUse} trong ArtManager");
+                    ArtManager.Instance.ForceRefreshFrame(updatedData.frameUse);
+                }
+                
+                // 2. Cập nhật tất cả ArtFrame trong scene sử dụng frameId này
+                RefreshAllArtFrames(updatedData.frameUse);
             }
 
             // Close popup sau 1 giây
@@ -315,6 +360,25 @@ public class ImageEditPopup : MonoBehaviour
             UpdateStatus($"❌ Error: {error}");
             Debug.LogError($"[ImageEditPopup] Update failed: {error}");
         }
+    }
+    
+    // Phương thức mới để tìm và refresh tất cả ArtFrame sử dụng frameId
+    private void RefreshAllArtFrames(int frameId)
+    {
+        ArtFrame[] allFrames = FindObjectsOfType<ArtFrame>();
+        int count = 0;
+        
+        foreach (ArtFrame frame in allFrames)
+        {
+            if (frame != null && frame.FrameId == frameId)
+            {
+                if (showDebug) Debug.Log($"[ImageEditPopup] Reloading ArtFrame {frame.name} với ID {frameId}");
+                frame.ReloadArtwork(true); // Force refresh
+                count++;
+            }
+        }
+        
+        if (showDebug) Debug.Log($"[ImageEditPopup] Đã refresh {count} ArtFrame với ID {frameId}");
     }
 
     private void UpdateStatus(string message)
