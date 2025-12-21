@@ -41,7 +41,7 @@ public class ImageItem : MonoBehaviour
 
         if (frameIdText != null)
         {
-            frameIdText.text = $"Frame: {data.frameUse}";
+            frameIdText.text = $"{data.frameUse}";
         }
 
         // Load thumbnail
