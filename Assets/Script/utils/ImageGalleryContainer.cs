@@ -34,6 +34,7 @@ public class ImageGalleryContainer : MonoBehaviour
         {
             LoadAllImages();
         }
+        gameObject.SetActive(false);
     }
 
     public void LoadAllImages()
