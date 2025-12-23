@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{{ PRODUCT_NAME }}}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+        #unity-container { width: 100vw; height: 100vh; }
+        #unity-canvas { width: 100%; height: 100%; background: #231F20; }
+        #file-input { display: none; }
+        #loading-cover {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: #231F20;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="unity-container">
+        <canvas id="unity-canvas"></canvas>
+        <div id="loading-cover">
+            <div>Loading... <span id="progress">0</span>%</div>
+        </div>
+    </div>
+    
+    <input type="file" id="file-input" accept="image/png,image/jpeg,image/jpg" />
+    
+    <script>
+        console.log('[WebGL] Template loaded');
+        
+        var unityInstance = null;
+        var fileInput = document.getElementById('file-input');
+        var loadingCover = document.getElementById('loading-cover');
+        var progressElement = document.getElementById('progress');
+        
+        if (!fileInput) {
+            console.error('[WebGL] CRITICAL ERROR: file-input not found!');
+        } else {
+            console.log('[WebGL] ✓ file-input found');
+        }
+        
+        // Function được gọi từ Unity
+        window.OpenFilePicker = function() {
+            console.log('[WebGL] OpenFilePicker called from Unity');
+            if (fileInput) {
+                console.log('[WebGL] Clicking file input...');
+                fileInput.click();
+            } else {
+                console.error('[WebGL] file-input is null!');
+            }
+        };
+        
+        // Xử lý khi chọn file
+        if (fileInput) {
+            fileInput.addEventListener('change', function(e) {
+                var file = e.target.files[0];
+                if (!file) {
+                    console.log('[WebGL] No file selected');
+                    return;
+                }
+                
+                console.log('[WebGL] File selected:', file.name, file.size, 'bytes');
+                
+                // Kiểm tra kích thước (giới hạn 10MB)
+                if (file.size > 10 * 1024 * 1024) {
+                    alert('File quá lớn! Vui lòng chọn ảnh dưới 10MB');
+                    fileInput.value = '';
+                    return;
+                }
+                
+                var reader = new FileReader();
+                reader.onload = function(event) {
+                    var base64 = event.target.result;
+                    console.log('[WebGL] File loaded, base64 length:', base64.length);
+                    
+                    if (unityInstance) {
+                        try {
+                            // ✅ Tạo JSON object chứa tên file + data
+                            var fileData = JSON.stringify({
+                                fileName: file.name,
+                                fileSize: file.size,
+                                base64Data: base64
+                            });
+                            
+                            console.log('[WebGL] Sending to Unity:', file.name, file.size, 'bytes');
+                            unityInstance.SendMessage('ImageEditPopup', 'OnWebGLFileSelected', fileData);
+                            console.log('[WebGL] ✓ Sent to Unity');
+                        } catch (err) {
+                            console.error('[WebGL] Error sending to Unity:', err);
+                        }
+                    } else {
+                        console.error('[WebGL] Unity instance not ready!');
+                    }
+                };
+                
+                reader.onerror = function(error) {
+                    console.error('[WebGL] FileReader error:', error);
+                };
+                
+                reader.readAsDataURL(file);
+                fileInput.value = '';
+            });
+        }
+        
+        var buildUrl = "Build";
+        var config = {
+            dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+            frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+            codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+            streamingAssetsUrl: "StreamingAssets",
+            companyName: "{{{ COMPANY_NAME }}}",
+            productName: "{{{ PRODUCT_NAME }}}",
+            productVersion: "{{{ PRODUCT_VERSION }}}",
+        };
+        
+        var script = document.createElement("script");
+        script.src = buildUrl + "/{{{ LOADER_FILENAME }}}";
+        script.onload = function() {
+            console.log('[WebGL] Loader script loaded');
+            createUnityInstance(document.querySelector("#unity-canvas"), config, function(progress) {
+                progressElement.innerText = Math.round(progress * 100);
+            }).then(function(instance) {
+                unityInstance = instance;
+                loadingCover.style.display = 'none';
+                console.log('[WebGL] ✓ Unity loaded successfully');
+            }).catch(function(message) {
+                console.error('[WebGL] Unity load failed:', message);
+                alert('Failed to load Unity: ' + message);
+            });
+        };
+        script.onerror = function() {
+            console.error('[WebGL] Failed to load Unity loader script');
+        };
+        document.body.appendChild(script);
+    </script>
+</body>
+</html>

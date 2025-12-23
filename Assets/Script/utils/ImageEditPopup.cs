@@ -1,6 +1,8 @@
 using System;
 using System.IO;
+using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -17,10 +19,10 @@ public class ImageEditPopup : MonoBehaviour
     [Header("UI References")]
     [SerializeField] private GameObject popupPanel;
     [SerializeField] private TMP_InputField nameInput;
-    [SerializeField] private TMP_InputField frameInput; // Read-only
-    [SerializeField] private TMP_InputField imageFileInput; // Hiển thị tên file
-    [SerializeField] private TMP_InputField authorInput; // Thêm trường author
-    [SerializeField] private TMP_InputField descriptionInput; // Thêm trường description
+    [SerializeField] private TMP_InputField frameInput;
+    [SerializeField] private TMP_InputField imageFileInput;
+    [SerializeField] private TMP_InputField authorInput;
+    [SerializeField] private TMP_InputField descriptionInput;
     [SerializeField] private Button browseButton;
     [SerializeField] private Button saveButton;
     [SerializeField] private Button cancelButton;
@@ -31,9 +33,24 @@ public class ImageEditPopup : MonoBehaviour
 
     private ImageData currentImageData;
     private string selectedImagePath;
+    private Texture2D selectedImageTexture;
     private PlayerController[] playerControllers;
     private System.Action onHideCallback;
     private ImageItem currentSelectedImageItem;
+
+    // ✅ Class để parse JSON từ JavaScript
+    [System.Serializable]
+    public class WebGLFileData
+    {
+        public string fileName;
+        public int fileSize;
+        public string base64Data;
+    }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    private static extern void OpenFilePicker();
+#endif
 
     private void Awake()
     {
@@ -44,8 +61,8 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         _instance = this;
+        gameObject.name = "ImageEditPopup";
 
-        // Setup buttons
         if (browseButton != null)
         {
             browseButton.onClick.AddListener(OnBrowseClicked);
@@ -61,13 +78,11 @@ public class ImageEditPopup : MonoBehaviour
             cancelButton.onClick.AddListener(Hide);
         }
 
-        // Disable frame input (read-only)
         if (frameInput != null)
         {
             frameInput.interactable = false;
         }
 
-        // Disable image file input (read-only, chỉ hiển thị)
         if (imageFileInput != null)
         {
             imageFileInput.interactable = false;
@@ -76,7 +91,6 @@ public class ImageEditPopup : MonoBehaviour
         Hide();
     }
 
-    // Phương thức trích xuất tên file từ URL
     private string GetFileNameFromUrl(string url)
     {
         if (string.IsNullOrEmpty(url))
@@ -84,25 +98,21 @@ public class ImageEditPopup : MonoBehaviour
 
         try
         {
-            // Tách URL theo dấu "/" và lấy phần cuối cùng
             string[] parts = url.Split('/');
             string fileName = parts[parts.Length - 1];
 
-            // Xử lý thêm nếu có tham số query trong URL
             if (fileName.Contains("?"))
             {
                 fileName = fileName.Split('?')[0];
             }
 
-            // Giải mã URL nếu cần
             fileName = Uri.UnescapeDataString(fileName);
-
             return fileName;
         }
         catch (Exception ex)
         {
             Debug.LogError($"[ImageEditPopup] Error extracting file name from URL: {ex.Message}");
-            return Path.GetFileName(url); // Fallback, dùng Path.GetFileName
+            return Path.GetFileName(url);
         }
     }
 
@@ -110,52 +120,48 @@ public class ImageEditPopup : MonoBehaviour
     {
         currentImageData = imageData;
         selectedImagePath = null;
+        
+        if (selectedImageTexture != null)
+        {
+            Destroy(selectedImageTexture);
+            selectedImageTexture = null;
+        }
 
-        // Lưu lại ImageItem đang được chọn
         currentSelectedImageItem = sourceImageItem;
 
-        // Set name
         if (nameInput != null)
         {
             nameInput.text = imageData.name;
         }
 
-        // Set frame (read-only)
         if (frameInput != null)
         {
             frameInput.text = imageData.frameUse.ToString();
         }
 
-        // Hiển thị tên file ảnh từ URL
         if (imageFileInput != null)
         {
             string fileName = GetFileNameFromUrl(imageData.url);
             imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
         }
 
-        // Hiển thị thông tin author và description nếu có
         if (authorInput != null)
         {
-            // Sử dụng thuộc tính author nếu có, không thì để trống
             authorInput.text = imageData.author ?? "";
         }
 
         if (descriptionInput != null)
         {
-            // Sử dụng thuộc tính description nếu có, không thì để trống
             descriptionInput.text = imageData.description ?? "";
         }
 
-        // Reset status
         UpdateStatus("Ready");
 
-        // Show popup
         if (popupPanel != null)
         {
             popupPanel.SetActive(true);
         }
 
-        // Disable all PlayerControllers to prevent movement while popup is open
         DisablePlayerControllers();
 
         if (showDebug) Debug.Log($"[ImageEditPopup] Showing popup for: {imageData.name}");
@@ -174,33 +180,31 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         selectedImagePath = null;
+        
+        if (selectedImageTexture != null)
+        {
+            Destroy(selectedImageTexture);
+            selectedImageTexture = null;
+        }
 
-        // Enable lại PlayerControllers khi đóng popup
         EnablePlayerControllers();
-
-        // Bỏ chọn tất cả các ImageItem
         UnselectAllImageItems();
 
-        // Gọi callback nếu có
         if (onHideCallback != null)
         {
             onHideCallback.Invoke();
-            onHideCallback = null; // Reset callback sau khi gọi
+            onHideCallback = null;
         }
     }
 
-    // Phương thức mới để bỏ chọn tất cả ImageItem
     private void UnselectAllImageItems()
     {
-        // Cách 1: Nếu lưu tham chiếu đến ImageItem đang được chọn
         if (currentSelectedImageItem != null)
         {
             currentSelectedImageItem.SetSelected(false);
             currentSelectedImageItem = null;
         }
 
-        // Cách 2: Tìm tất cả ImageItem trong scene và bỏ chọn
-        // Phòng trường hợp có nhiều ImageItem được chọn do lỗi nào đó
         ImageItem[] allImageItems = FindObjectsByType<ImageItem>(FindObjectsSortMode.None);
         foreach (var item in allImageItems)
         {
@@ -210,6 +214,7 @@ public class ImageEditPopup : MonoBehaviour
             }
         }
     }
+
     private ArtFrame FindArtFrameByFrameId(int frameId)
     {
         ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
@@ -220,10 +225,9 @@ public class ImageEditPopup : MonoBehaviour
         }
         return null;
     }
-    
+
     private void DisablePlayerControllers()
     {
-        // Tìm tất cả PlayerController trong scene và disable chúng
         playerControllers = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
         foreach (var controller in playerControllers)
         {
@@ -237,7 +241,6 @@ public class ImageEditPopup : MonoBehaviour
 
     private void EnablePlayerControllers()
     {
-        // Enable lại tất cả PlayerController đã lưu
         if (playerControllers != null)
         {
             foreach (var controller in playerControllers)
@@ -255,51 +258,176 @@ public class ImageEditPopup : MonoBehaviour
     {
         if (showDebug) Debug.Log("[ImageEditPopup] Browse clicked");
 
-        string path = OpenFilePicker();
-
-        if (!string.IsNullOrEmpty(path))
+#if UNITY_WEBGL && !UNITY_EDITOR
+        try
+        {
+            OpenFilePicker();
+            UpdateStatus("Opening file picker...");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ImageEditPopup] Error calling OpenFilePicker: {ex.Message}");
+            UpdateStatus("Error: Could not open file picker");
+        }
+#elif UNITY_EDITOR
+        string path = EditorUtility.OpenFilePanel("Select Image", "", "png,jpg,jpeg");
+        if (!string.IsNullOrEmpty(path) && File.Exists(path))
         {
             selectedImagePath = path;
-
-            // Hiển thị tên file
+            
             if (imageFileInput != null)
             {
                 imageFileInput.text = Path.GetFileName(path);
             }
 
             UpdateStatus($"Selected: {Path.GetFileName(path)}");
-
             if (showDebug) Debug.Log($"[ImageEditPopup] Selected file: {path}");
+        }
+        else
+        {
+            UpdateStatus("No file selected");
+        }
+#else
+        UpdateStatus("File browser not available on this platform");
+#endif
+    }
+
+    // ✅ Method nhận JSON từ JavaScript
+    public void OnWebGLFileSelected(string jsonData)
+    {
+        if (showDebug) Debug.Log("[ImageEditPopup] OnWebGLFileSelected called");
+
+        if (string.IsNullOrEmpty(jsonData))
+        {
+            UpdateStatus("No file selected");
+            return;
+        }
+
+        try
+        {
+            // Parse JSON
+            WebGLFileData fileData = JsonUtility.FromJson<WebGLFileData>(jsonData);
+            
+            if (fileData == null || string.IsNullOrEmpty(fileData.base64Data))
+            {
+                UpdateStatus("Invalid file data");
+                return;
+            }
+
+            string fileName = fileData.fileName;
+            int originalSize = fileData.fileSize;
+            
+            if (showDebug) Debug.Log($"[ImageEditPopup] Processing: {fileName} ({originalSize / 1024}KB)");
+
+            // Extract base64 string
+            int commaIndex = fileData.base64Data.IndexOf(',');
+            if (commaIndex < 0)
+            {
+                UpdateStatus("Invalid file format");
+                return;
+            }
+
+            string base64String = fileData.base64Data.Substring(commaIndex + 1);
+            byte[] fileBytes = Convert.FromBase64String(base64String);
+
+            // Load ảnh gốc
+            Texture2D originalTexture = new Texture2D(2, 2);
+            if (!originalTexture.LoadImage(fileBytes))
+            {
+                UpdateStatus("✗ Invalid image format");
+                Destroy(originalTexture);
+                return;
+            }
+
+            if (showDebug) Debug.Log($"[ImageEditPopup] Original: {originalTexture.width}x{originalTexture.height}");
+
+            // Resize nếu quá lớn
+            Texture2D resizedTexture = ResizeTexture(originalTexture, 2048, 2048);
+            Destroy(originalTexture);
+
+            // Nén ảnh
+            byte[] compressedBytes = resizedTexture.EncodeToJPG(75);
+            
+            if (compressedBytes == null || compressedBytes.Length == 0)
+            {
+                UpdateStatus("✗ Failed to compress");
+                Destroy(resizedTexture);
+                return;
+            }
+
+            // Load lại
+            Texture2D finalTexture = new Texture2D(2, 2);
+            if (finalTexture.LoadImage(compressedBytes))
+            {
+                if (selectedImageTexture != null)
+                {
+                    Destroy(selectedImageTexture);
+                }
+                
+                selectedImageTexture = finalTexture;
+                selectedImagePath = fileName;
+
+                if (imageFileInput != null)
+                {
+                    imageFileInput.text = fileName;
+                }
+
+                int finalSize = compressedBytes.Length;
+                float ratio = (float)finalSize / originalSize * 100;
+                
+                UpdateStatus($"✓ {fileName} ({finalSize / 1024}KB, {finalTexture.width}x{finalTexture.height}) - {ratio:F0}%");
+                
+                if (showDebug) 
+                {
+                    Debug.Log($"[ImageEditPopup] Compressed: {originalSize / 1024}KB → {finalSize / 1024}KB");
+                }
+            }
+            else
+            {
+                UpdateStatus("✗ Failed to process");
+                Destroy(finalTexture);
+            }
+            
+            Destroy(resizedTexture);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ImageEditPopup] Error: {ex.Message}");
+            UpdateStatus($"Error: {ex.Message}");
         }
     }
 
-    private string OpenFilePicker()
+    // ✅ Method resize texture
+    private Texture2D ResizeTexture(Texture2D source, int maxWidth, int maxHeight)
     {
-#if UNITY_EDITOR
-        // Unity Editor: Dùng EditorUtility
-        string path = EditorUtility.OpenFilePanel(
-            "Select Image",
-            "",
-            "png,jpg,jpeg"
-        );
+        int width = source.width;
+        int height = source.height;
 
-        if (!string.IsNullOrEmpty(path))
+        if (width <= maxWidth && height <= maxHeight)
         {
-            return path;
+            return source;
         }
-#elif UNITY_STANDALONE_WIN
-        // Windows Standalone: Dùng SimpleFileBrowser (see below)
-        // Hoặc dùng native plugin
-        Debug.LogWarning("[ImageEditPopup] File browser not implemented for standalone build");
-        UpdateStatus("File browser not available in standalone build");
-        
-        // WORKAROUND: Bạn có thể hardcode path để test
-        // return "C:/Users/YourName/Pictures/test.png";
-#else
-        Debug.LogWarning("[ImageEditPopup] File picker not supported on this platform");
-        UpdateStatus("File picker not supported");
-#endif
-        return null;
+
+        float ratio = Mathf.Min((float)maxWidth / width, (float)maxHeight / height);
+        int newWidth = Mathf.RoundToInt(width * ratio);
+        int newHeight = Mathf.RoundToInt(height * ratio);
+
+        if (showDebug) Debug.Log($"[ImageEditPopup] Resizing: {width}x{height} → {newWidth}x{newHeight}");
+
+        RenderTexture rt = RenderTexture.GetTemporary(newWidth, newHeight);
+        rt.filterMode = FilterMode.Bilinear;
+
+        RenderTexture.active = rt;
+        Graphics.Blit(source, rt);
+
+        Texture2D result = new Texture2D(newWidth, newHeight, TextureFormat.RGB24, false);
+        result.ReadPixels(new Rect(0, 0, newWidth, newHeight), 0, 0);
+        result.Apply();
+
+        RenderTexture.active = null;
+        RenderTexture.ReleaseTemporary(rt);
+
+        return result;
     }
 
     private void OnSaveClicked()
@@ -311,8 +439,6 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         string newName = nameInput != null ? nameInput.text.Trim() : currentImageData.name;
-
-        // Lấy thông tin author và description từ input fields
         string author = authorInput != null ? authorInput.text.Trim() : "";
         string description = descriptionInput != null ? descriptionInput.text.Trim() : "";
 
@@ -322,11 +448,9 @@ public class ImageEditPopup : MonoBehaviour
             return;
         }
 
-        // Lấy position/rotation hiện tại của ArtFrame theo frameUse
         Vector3 position = Vector3.zero;
         Vector3 rotation = Vector3.zero;
 
-        // Sử dụng hàm FindArtFrameByFrameId có sẵn để tìm frame
         ArtFrame targetFrame = FindArtFrameByFrameId(currentImageData.frameUse);
 
         if (targetFrame != null)
@@ -334,24 +458,36 @@ public class ImageEditPopup : MonoBehaviour
             position = targetFrame.transform.position;
             rotation = targetFrame.transform.eulerAngles;
         }
-        else if (showDebug)
-        {
-            Debug.LogWarning($"[ImageEditPopup] Không tìm thấy ArtFrame với ID={currentImageData.frameUse}. Sử dụng position/rotation mặc định (0,0,0).");
-        }
 
         UpdateStatus("Saving...");
 
-        if (showDebug)
-        {
-            Debug.Log($"[ImageEditPopup] Saving - Name: {newName}, Frame: {currentImageData.frameUse}, Author: {author}, " +
-                     $"Position: {position}, Rotation: {rotation}, NewImage: {!string.IsNullOrEmpty(selectedImagePath)}");
-        }
-
-        // Nếu có chọn ảnh mới
         if (!string.IsNullOrEmpty(selectedImagePath))
         {
-            if (showDebug) Debug.Log($"[ImageEditPopup] Updating with new image: {selectedImagePath}");
-
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (selectedImageTexture != null)
+            {
+                if (showDebug) Debug.Log("[ImageEditPopup] WebGL: Updating with Texture2D");
+                
+                // ✅ SỬA: Thêm delegate wrapper
+                APIManager.Instance.UpdateImageByFrame(
+                    currentImageData.frameUse,
+                    newName,
+                    author,
+                    description,
+                    position,
+                    rotation,
+                    selectedImageTexture,
+                    (success, data, error) => OnUpdateComplete(success, data, error)
+                );
+            }
+            else
+            {
+                UpdateStatus("Error: No texture loaded");
+            }
+#else
+            if (showDebug) Debug.Log($"[ImageEditPopup] Editor: Updating with path: {selectedImagePath}");
+            
+            // ✅ SỬA: Thêm delegate wrapper
             APIManager.Instance.UpdateImageByFrameFromPath(
                 currentImageData.frameUse,
                 newName,
@@ -360,14 +496,15 @@ public class ImageEditPopup : MonoBehaviour
                 position,
                 rotation,
                 selectedImagePath,
-                OnUpdateComplete
+                (success, data, error) => OnUpdateComplete(success, data, error)
             );
+#endif
         }
         else
         {
-            // Chỉ update thông tin (không thay đổi ảnh)
             if (showDebug) Debug.Log("[ImageEditPopup] Updating info only");
 
+            // ✅ SỬA: Thêm delegate wrapper
             APIManager.Instance.UpdateImageByFrame(
                 currentImageData.frameUse,
                 newName,
@@ -375,8 +512,8 @@ public class ImageEditPopup : MonoBehaviour
                 description,
                 position,
                 rotation,
-                null, // imageTexture = null vì không thay đổi ảnh
-                OnUpdateComplete
+                null,
+                (success, data, error) => OnUpdateComplete(success, data, error)
             );
         }
     }
@@ -385,43 +522,43 @@ public class ImageEditPopup : MonoBehaviour
     {
         if (success)
         {
-            UpdateStatus(" Saved!");
+            UpdateStatus("✓ Saved!");
 
             if (showDebug) Debug.Log("[ImageEditPopup] Update successful");
 
-            // Refresh gallery - sửa đoạn này
-            var gallery = FindAnyObjectByType<ImageGalleryContainer>(); // thêm tham số true để tìm cả inactive objects
+            var gallery = FindAnyObjectByType<ImageGalleryContainer>();
             if (gallery != null)
             {
                 if (showDebug) Debug.Log("[ImageEditPopup] Refreshing gallery");
                 gallery.RefreshGallery();
             }
 
-            // Refresh tất cả các ArtFrame hiển thị ảnh này
             if (updatedData != null)
             {
-                // 1. Làm mới cache trong ArtManager
                 if (ArtManager.Instance != null)
                 {
-                    if (showDebug) Debug.Log($"[ImageEditPopup] Force refresh frame {updatedData.frameUse} trong ArtManager");
+                    if (showDebug) Debug.Log($"[ImageEditPopup] Force refresh frame {updatedData.frameUse}");
                     ArtManager.Instance.ForceRefreshFrame(updatedData.frameUse);
                 }
 
-                // 2. Cập nhật tất cả ArtFrame trong scene sử dụng frameId này
                 RefreshAllArtFrames(updatedData.frameUse);
             }
 
-            // Close popup sau 1 giây
+            // ✅ SỬA: Unselect trước khi hide
+            if (currentSelectedImageItem != null)
+            {
+                currentSelectedImageItem.SetSelected(false);
+            }
+
             Invoke(nameof(Hide), 1f);
         }
         else
         {
-            UpdateStatus($" Error: {error}");
+            UpdateStatus($"✗ Error: {error}");
             Debug.LogError($"[ImageEditPopup] Update failed: {error}");
         }
     }
 
-    // Phương thức mới để tìm và refresh tất cả ArtFrame sử dụng frameId
     private void RefreshAllArtFrames(int frameId)
     {
         ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
@@ -432,7 +569,7 @@ public class ImageEditPopup : MonoBehaviour
             if (frame != null && frame.FrameId == frameId)
             {
                 if (showDebug) Debug.Log($"[ImageEditPopup] Reloading ArtFrame {frame.name} với ID {frameId}");
-                frame.ReloadArtwork(true); // Force refresh
+                frame.ReloadArtwork(true);
                 count++;
             }
         }
@@ -465,10 +602,13 @@ public class ImageEditPopup : MonoBehaviour
             cancelButton.onClick.RemoveListener(Hide);
         }
 
-        // Ensure player controllers are enabled when destroying this object
-        EnablePlayerControllers();
+        if (selectedImageTexture != null)
+        {
+            Destroy(selectedImageTexture);
+            selectedImageTexture = null;
+        }
 
-        // Make sure to unselect items when destroyed
+        EnablePlayerControllers();
         UnselectAllImageItems();
     }
 }
