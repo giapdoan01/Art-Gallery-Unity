@@ -21,10 +21,49 @@ public class ImageData
     public string name;
     public string url;
     public int frameUse;
-    public string hash; // Hash từ server
-    public long lastModified; // Timestamp
-    public string author; // Thêm trường author
-    public string description; // Thêm trường description
+    public string hash;
+    public long lastModified;
+    public string author;
+    public string description;
+
+    // Thay đổi: Định nghĩa position và rotation theo cấu trúc từ server
+    public Position position;
+    public Rotation rotation;
+
+    // Thêm các properties để tương thích với code cũ
+    public float positionX { get { return position != null ? position.x : 0; } }
+    public float positionY { get { return position != null ? position.y : 0; } }
+    public float positionZ { get { return position != null ? position.z : 0; } }
+    public float rotationX { get { return rotation != null ? rotation.x : 0; } }
+    public float rotationY { get { return rotation != null ? rotation.y : 0; } }
+    public float rotationZ { get { return rotation != null ? rotation.z : 0; } }
+}
+
+// Các class này đã có trong code, chỉ cần đảm bảo chúng được định nghĩa đúng
+[Serializable]
+public class Position
+{
+    public float x;
+    public float y;
+    public float z;
+
+    public Vector3 ToVector3()
+    {
+        return new Vector3(x, y, z);
+    }
+}
+
+[Serializable]
+public class Rotation
+{
+    public float x;
+    public float y;
+    public float z;
+
+    public Vector3 ToVector3()
+    {
+        return new Vector3(x, y, z);
+    }
 }
 
 [Serializable]
@@ -74,6 +113,8 @@ public class ArtManager : MonoBehaviour
     private Dictionary<int, string> imageHashCache = new Dictionary<int, string>();
     private Dictionary<int, long> lastModifiedCache = new Dictionary<int, long>();
     private Dictionary<int, float> lastLoadTime = new Dictionary<int, float>();
+    // Thêm cache cho ImageData
+    private Dictionary<int, ImageData> imageDataCache = new Dictionary<int, ImageData>();
 
     // Loading queue
     private Queue<int> downloadQueue = new Queue<int>();
@@ -146,7 +187,7 @@ public class ArtManager : MonoBehaviour
         {
             float distance = Vector3.Distance(playerTransform.position, lastPlayerPosition);
             float speed = distance / Time.deltaTime;
-            
+
             isPlayerIdle = speed < idleThreshold;
             lastPlayerPosition = playerTransform.position;
         }
@@ -205,7 +246,7 @@ public class ArtManager : MonoBehaviour
             if (needsUpdate)
             {
                 if (showDebug) Debug.Log($"[ArtManager] Frame {frameId} có cập nhật mới, thêm vào queue");
-                
+
                 // Thêm vào queue để tải sau
                 if (!downloadQueue.Contains(frameId) && !loadingFrames.Contains(frameId))
                 {
@@ -288,17 +329,20 @@ public class ArtManager : MonoBehaviour
                 if (response.success && response.data != null)
                 {
                     imageUrl = response.data.url;
-                    
+
                     // Lưu hash nếu có
                     if (!string.IsNullOrEmpty(response.data.hash))
                     {
                         imageHashCache[frameId] = response.data.hash;
                     }
-                    
+
                     if (response.data.lastModified > 0)
                     {
                         lastModifiedCache[frameId] = response.data.lastModified;
                     }
+
+                    // Lưu ImageData vào cache
+                    imageDataCache[frameId] = response.data;
                 }
             }
         }
@@ -451,6 +495,18 @@ public class ArtManager : MonoBehaviour
     // ============================================
 
     /// <summary>
+    /// Lấy dữ liệu ImageData cho một frame cụ thể từ cache
+    /// </summary>
+    public ImageData GetImageDataForFrame(int frameId)
+    {
+        if (imageDataCache.TryGetValue(frameId, out ImageData data))
+        {
+            return data;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Kiểm tra cập nhật cho một frame cụ thể theo yêu cầu
     /// </summary>
     public void CheckFrameUpdate(int frameId)
@@ -466,7 +522,7 @@ public class ArtManager : MonoBehaviour
     {
         if (showDebug) Debug.Log("[ArtManager] Kiểm tra cập nhật cho tất cả các frames");
         List<int> framesToCheck = new List<int>(imageCache.Keys);
-        
+
         foreach (int frameId in framesToCheck)
         {
             StartCoroutine(CheckFrameForUpdate(frameId));
@@ -476,7 +532,7 @@ public class ArtManager : MonoBehaviour
     public void ForceRefreshFrame(int frameId)
     {
         if (showDebug) Debug.Log($"[ArtManager] Force refresh frame {frameId}");
-        
+
         // Clear cache
         if (imageCache.ContainsKey(frameId))
         {
@@ -486,7 +542,12 @@ public class ArtManager : MonoBehaviour
         {
             imageHashCache.Remove(frameId);
         }
-        
+        // Xóa cả ImageData khỏi cache
+        if (imageDataCache.ContainsKey(frameId))
+        {
+            imageDataCache.Remove(frameId);
+        }
+
         // Thêm vào đầu queue
         var tempQueue = new Queue<int>();
         tempQueue.Enqueue(frameId);
@@ -504,9 +565,9 @@ public class ArtManager : MonoBehaviour
     public void ForceRefreshAllFrames()
     {
         if (showDebug) Debug.Log("[ArtManager] Force refresh all frames");
-        
+
         List<int> frameIds = new List<int>(imageCache.Keys);
-        
+
         foreach (int frameId in frameIds)
         {
             if (!downloadQueue.Contains(frameId) && !loadingFrames.Contains(frameId))
@@ -526,15 +587,19 @@ public class ArtManager : MonoBehaviour
             }
             imageCache.Remove(frameId);
         }
-        
+
         if (imageHashCache.ContainsKey(frameId))
             imageHashCache.Remove(frameId);
-        
+
         if (lastModifiedCache.ContainsKey(frameId))
             lastModifiedCache.Remove(frameId);
-        
+
         if (lastLoadTime.ContainsKey(frameId))
             lastLoadTime.Remove(frameId);
+
+        // Xóa ImageData khỏi cache
+        if (imageDataCache.ContainsKey(frameId))
+            imageDataCache.Remove(frameId);
     }
 
     public void ClearCache()
@@ -546,11 +611,12 @@ public class ArtManager : MonoBehaviour
                 Destroy(sprite.texture);
             }
         }
-        
+
         imageCache.Clear();
         imageHashCache.Clear();
         lastModifiedCache.Clear();
         lastLoadTime.Clear();
+        imageDataCache.Clear(); // Xóa cả ImageData cache
         downloadQueue.Clear();
     }
 

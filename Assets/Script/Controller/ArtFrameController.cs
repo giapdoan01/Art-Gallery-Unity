@@ -1,14 +1,15 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
+using System.Collections.Generic;
 
 [RequireComponent(typeof(ArtFrame), typeof(Collider))]
 public class ArtFrameController : MonoBehaviour
 {
-    [Header("Tùy chọn tương tác")]
-    [SerializeField] private bool interactableInGame = true;
+    [Header("Mouse Interaction")]
     [SerializeField] private float interactionDistance = 10f;
-    [SerializeField] private KeyCode interactionKey = KeyCode.E;
     [SerializeField] private GameObject selectionIndicator;
     [SerializeField] private bool includeChildColliders = true;
+    [SerializeField] private bool ignoreUIClicks = true;
 
     [Header("Debug")]
     [SerializeField] private bool showDebug = false;
@@ -16,8 +17,11 @@ public class ArtFrameController : MonoBehaviour
     private ArtFrame artFrame;
     private Collider artFrameCollider;
     private bool isSelected = false;
-    private bool isPlayerNearby = false;
     private static ArtFrameController currentSelectedFrame;
+
+    // Properties
+    public bool IsSelected => isSelected;
+    public ArtFrame ArtFrameComponent => artFrame;
 
     private void Awake()
     {
@@ -40,185 +44,280 @@ public class ArtFrameController : MonoBehaviour
 
     private void Update()
     {
-        if (!interactableInGame) return;
-
-        // Kiểm tra người chơi có gần không
-        CheckPlayerProximity();
-
-        // Xử lý tương tác click/touch
-        HandleInteractions();
+        // Kiểm tra tương tác bằng chuột
+        CheckMouseInteraction();
     }
 
-    private void CheckPlayerProximity()
+    private void CheckMouseInteraction()
     {
-        // Tìm người chơi trong scene
-        PlayerController localPlayer = FindObjectOfType<PlayerController>();
-        
-        if (localPlayer != null)
-        {
-            float distance = Vector3.Distance(transform.position, localPlayer.transform.position);
-            isPlayerNearby = distance <= interactionDistance;
+        // Chỉ xử lý khi click chuột trái
+        if (!Input.GetMouseButtonDown(0)) return;
 
-            if (showDebug && isSelected)
+        // Kiểm tra xem có đang click vào UI 
+        if (ignoreUIClicks && IsPointerOverUI())
+        {
+            if (showDebug)
             {
-                Debug.DrawLine(transform.position, localPlayer.transform.position, isPlayerNearby ? Color.green : Color.red);
+                Debug.Log($"[ArtFrameController] Bỏ qua click vì đang trên UI");
             }
-        }
-    }
-
-    private void HandleInteractions()
-    {
-        // Tương tác click chuột
-        if (Input.GetMouseButtonDown(0)) // Left click
-        {
-            TryInteractWithRaycast();
-        }
-
-        // Tương tác bấm phím khi gần
-        if (isPlayerNearby && Input.GetKeyDown(interactionKey))
-        {
-            OnInteract();
-        }
-    }
-
-    private void TryInteractWithRaycast()
-    {
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-        RaycastHit hit;
-
-        if (Physics.Raycast(ray, out hit))
-        {
-            bool isHit = false;
-            
-            if (hit.collider == artFrameCollider)
-            {
-                // Hit trực tiếp vào collider của ArtFrame
-                isHit = true;
-            }
-            else if (includeChildColliders)
-            {
-                // Kiểm tra xem collider bị hit có phải là con của GameObject này không
-                Transform hitTransform = hit.collider.transform;
-                if (hitTransform.IsChildOf(transform) && hitTransform != transform)
-                {
-                    // Hit vào collider của một trong các object con
-                    isHit = true;
-                    
-                    if (showDebug)
-                        Debug.Log($"[ArtFrameController] Hit vào collider con: {hit.collider.name}");
-                }
-            }
-
-            if (isHit)
-            {
-                OnInteract();
-                return;
-            }
-        }
-        
-        // Nếu không hit hoặc hit vào collider khác
-        if (isSelected && currentSelectedFrame == this)
-        {
-            // Click vào chỗ khác, bỏ chọn frame này
-            SetSelected(false);
-            currentSelectedFrame = null;
-        }
-    }
-
-    private void OnInteract()
-    {
-        if (showDebug) 
-            Debug.Log($"[ArtFrameController] Tương tác với khung tranh: {artFrame.FrameName} (ID: {artFrame.FrameId})");
-
-        // Bỏ chọn frame đã chọn trước đó
-        if (currentSelectedFrame != null && currentSelectedFrame != this)
-        {
-            currentSelectedFrame.SetSelected(false);
-        }
-
-        // Đặt frame này là lựa chọn hiện tại
-        currentSelectedFrame = this;
-        SetSelected(true);
-
-        // Lấy dữ liệu hình ảnh cho frame
-        if (artFrame != null && artFrame.FrameId > 0)
-        {
-            // Yêu cầu dữ liệu hình ảnh từ APIManager
-            APIManager.Instance.GetImageByFrame(artFrame.FrameId, OnGetImageByFrameComplete);
-        }
-    }
-
-    private void OnGetImageByFrameComplete(bool success, ImageData imageData, string error)
-    {
-        if (!success || imageData == null)
-        {
-            Debug.LogError($"[ArtFrameController] Không lấy được dữ liệu hình ảnh cho frame {artFrame.FrameId}: {error}", this);
-            SetSelected(false);
             return;
         }
 
-        // Hiển thị popup chỉnh sửa
-        if (ImageEditPopup.Instance != null)
+        // Kiểm tra xem có đang click vào buttons của ArtFrame 
+        if (artFrame != null && artFrame.IsPointerOverButtons())
         {
-            // Hiển thị popup với dữ liệu hình ảnh
-            ImageEditPopup.Instance.Show(imageData);
-            
-            // Đăng ký callback khi đóng popup
-            ImageEditPopup.Instance.RegisterOnHideCallback(OnPopupClosed);
+            if (showDebug)
+            {
+                Debug.Log($"[ArtFrameController] Bỏ qua click vì đang trên buttons của ArtFrame");
+            }
+            return;
+        }
+
+        // Raycast để kiểm tra click vào frame
+        Camera mainCamera = Camera.main;
+        if (mainCamera == null) return;
+
+        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+        RaycastHit hit;
+
+        // Bỏ qua UI layer khi raycast
+        int layerMask = ~LayerMask.GetMask("UI");
+
+        if (Physics.Raycast(ray, out hit, interactionDistance, layerMask))
+        {
+            // Kiểm tra xem có hit vào frame này không
+            bool hitThisFrame = false;
+
+            if (hit.collider.gameObject == gameObject)
+            {
+                hitThisFrame = true;
+            }
+            else if (includeChildColliders && hit.collider.transform.IsChildOf(transform))
+            {
+                hitThisFrame = true;
+            }
+
+            if (hitThisFrame)
+            {
+                if (showDebug)
+                {
+                    Debug.Log($"[ArtFrameController] Click vào frame {artFrame.FrameId}");
+                }
+
+                OnFrameClicked();
+            }
+            else
+            {
+                // Click vào object khác, bỏ chọn frame này
+                if (isSelected)
+                {
+                    Deselect();
+                }
+            }
         }
         else
         {
-            Debug.LogError("[ArtFrameController] ImageEditPopup.Instance là null! Đảm bảo nó tồn tại trong scene.", this);
-            SetSelected(false);
+            // Click vào không gian trống, bỏ chọn
+            if (isSelected)
+            {
+                Deselect();
+            }
         }
     }
 
-    private void OnPopupClosed()
+    /// <summary>
+    /// Kiểm tra xem pointer có đang trên UI không (ngoại trừ buttons của ArtFrame)
+    /// </summary>
+    private bool IsPointerOverUI()
     {
-        // Bỏ chọn frame này khi đóng popup
-        SetSelected(false);
-        
-        // Xóa tham chiếu tĩnh nếu đây là frame đã được chọn
+        if (EventSystem.current == null) return false;
+
+        // Kiểm tra cơ bản
+        if (!EventSystem.current.IsPointerOverGameObject()) return false;
+
+        // Kiểm tra chi tiết để loại trừ buttons của ArtFrame
+        PointerEventData eventData = new PointerEventData(EventSystem.current);
+        eventData.position = Input.mousePosition;
+
+        List<RaycastResult> results = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(eventData, results);
+
+        foreach (RaycastResult result in results)
+        {
+            if (result.gameObject == null) continue;
+
+            // Nếu là button container của ArtFrame này, không tính là UI
+            if (artFrame != null && artFrame.ButtonContainer != null)
+            {
+                if (result.gameObject.transform.IsChildOf(artFrame.ButtonContainer.transform) ||
+                    result.gameObject == artFrame.ButtonContainer)
+                {
+                    continue;
+                }
+            }
+
+            // Nếu là UI khác, return true
+            if (result.gameObject.layer == LayerMask.NameToLayer("UI"))
+            {
+                return true;
+            }
+
+            // Kiểm tra có Canvas component không
+            Canvas canvas = result.gameObject.GetComponentInParent<Canvas>();
+            if (canvas != null)
+            {
+                // Nếu là canvas của ArtFrame, bỏ qua
+                if (artFrame != null && artFrame.ButtonContainer != null)
+                {
+                    Canvas artFrameCanvas = artFrame.ButtonContainer.GetComponentInParent<Canvas>();
+                    if (artFrameCanvas != null && canvas == artFrameCanvas)
+                    {
+                        continue;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void OnFrameClicked()
+    {
+        // Toggle selection
+        if (isSelected)
+        {
+            Deselect();
+        }
+        else
+        {
+            Select();
+        }
+    }
+
+    public void Select()
+    {
+        // Bỏ chọn frame đang được chọn trước đó
+        if (currentSelectedFrame != null && currentSelectedFrame != this)
+        {
+            currentSelectedFrame.Deselect();
+        }
+
+        isSelected = true;
+        currentSelectedFrame = this;
+
+        // Hiển thị indicator
+        if (selectionIndicator != null)
+        {
+            selectionIndicator.SetActive(true);
+        }
+
+        // Hiển thị buttons của ArtFrame
+        if (artFrame != null)
+        {
+            artFrame.ForceShowButtons();
+        }
+
+        if (showDebug)
+        {
+            Debug.Log($"[ArtFrameController] Frame {artFrame.FrameId} được chọn");
+        }
+
+        // Gọi event hoặc callback nếu cần
+        OnFrameSelected();
+    }
+
+    public void Deselect()
+    {
+        isSelected = false;
+
         if (currentSelectedFrame == this)
         {
             currentSelectedFrame = null;
         }
-    }
 
-    public void SetSelected(bool selected)
-    {
-        isSelected = selected;
-
-        // Cập nhật hiển thị chỉ báo lựa chọn
+        // Ẩn indicator
         if (selectionIndicator != null)
         {
-            selectionIndicator.SetActive(selected);
+            selectionIndicator.SetActive(false);
         }
 
-        // Có thể thêm hiệu ứng lựa chọn khác ở đây
+        if (showDebug)
+        {
+            Debug.Log($"[ArtFrameController] Frame {artFrame.FrameId} bỏ chọn");
+        }
+
+        // Gọi event hoặc callback nếu cần
+        OnFrameDeselected();
     }
 
-    public bool IsSelected()
+    public void ToggleSelection()
     {
-        return isSelected;
+        if (isSelected)
+        {
+            Deselect();
+        }
+        else
+        {
+            Select();
+        }
     }
+
+    /// <summary>
+    /// Được gọi khi frame được chọn
+    /// </summary>
+    protected virtual void OnFrameSelected()
+    {
+        // Override trong subclass nếu cần
+    }
+
+    /// <summary>
+    /// Được gọi khi frame bỏ chọn
+    /// </summary>
+    protected virtual void OnFrameDeselected()
+    {
+        // Override trong subclass nếu cần
+    }
+
+    #region Public Methods
+
+    /// <summary>
+    /// Lấy frame đang được chọn hiện tại
+    /// </summary>
+    public static ArtFrameController GetCurrentSelectedFrame()
+    {
+        return currentSelectedFrame;
+    }
+
+    /// <summary>
+    /// Bỏ chọn tất cả frames
+    /// </summary>
+    public static void DeselectAll()
+    {
+        if (currentSelectedFrame != null)
+        {
+            currentSelectedFrame.Deselect();
+        }
+    }
+
+    #endregion
+
+    #region Gizmos
 
     private void OnDrawGizmosSelected()
     {
-        if (interactableInGame)
+        // Hiển thị vùng tương tác
+        Gizmos.color = Color.green;
+        Gizmos.DrawWireSphere(transform.position, interactionDistance);
+
+        // Hiển thị trạng thái
+        if (Application.isPlaying && isSelected)
         {
             Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(transform.position, interactionDistance);
+            Gizmos.DrawWireCube(transform.position, transform.localScale * 1.1f);
         }
     }
 
-    // Hỗ trợ dọn dẹp khi đối tượng bị hủy
-    private void OnDestroy()
-    {
-        // Xóa tham chiếu tĩnh nếu đây là frame đang được chọn
-        if (currentSelectedFrame == this)
-        {
-            currentSelectedFrame = null;
-        }
-    }
+    #endregion
 }

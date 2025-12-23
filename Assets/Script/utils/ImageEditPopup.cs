@@ -33,7 +33,7 @@ public class ImageEditPopup : MonoBehaviour
     private string selectedImagePath;
     private PlayerController[] playerControllers;
     private System.Action onHideCallback;
-    private ImageItem currentSelectedImageItem; 
+    private ImageItem currentSelectedImageItem;
 
     private void Awake()
     {
@@ -81,22 +81,22 @@ public class ImageEditPopup : MonoBehaviour
     {
         if (string.IsNullOrEmpty(url))
             return string.Empty;
-        
+
         try
         {
             // Tách URL theo dấu "/" và lấy phần cuối cùng
             string[] parts = url.Split('/');
             string fileName = parts[parts.Length - 1];
-            
+
             // Xử lý thêm nếu có tham số query trong URL
             if (fileName.Contains("?"))
             {
                 fileName = fileName.Split('?')[0];
             }
-            
+
             // Giải mã URL nếu cần
             fileName = Uri.UnescapeDataString(fileName);
-            
+
             return fileName;
         }
         catch (Exception ex)
@@ -110,7 +110,7 @@ public class ImageEditPopup : MonoBehaviour
     {
         currentImageData = imageData;
         selectedImagePath = null;
-        
+
         // Lưu lại ImageItem đang được chọn
         currentSelectedImageItem = sourceImageItem;
 
@@ -132,14 +132,14 @@ public class ImageEditPopup : MonoBehaviour
             string fileName = GetFileNameFromUrl(imageData.url);
             imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
         }
-        
+
         // Hiển thị thông tin author và description nếu có
         if (authorInput != null)
         {
             // Sử dụng thuộc tính author nếu có, không thì để trống
             authorInput.text = imageData.author ?? "";
         }
-        
+
         if (descriptionInput != null)
         {
             // Sử dụng thuộc tính description nếu có, không thì để trống
@@ -174,13 +174,13 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         selectedImagePath = null;
-        
+
         // Enable lại PlayerControllers khi đóng popup
         EnablePlayerControllers();
-        
+
         // Bỏ chọn tất cả các ImageItem
         UnselectAllImageItems();
-        
+
         // Gọi callback nếu có
         if (onHideCallback != null)
         {
@@ -198,10 +198,10 @@ public class ImageEditPopup : MonoBehaviour
             currentSelectedImageItem.SetSelected(false);
             currentSelectedImageItem = null;
         }
-        
+
         // Cách 2: Tìm tất cả ImageItem trong scene và bỏ chọn
         // Phòng trường hợp có nhiều ImageItem được chọn do lỗi nào đó
-        ImageItem[] allImageItems = FindObjectsOfType<ImageItem>();
+        ImageItem[] allImageItems = FindObjectsByType<ImageItem>(FindObjectsSortMode.None);
         foreach (var item in allImageItems)
         {
             if (item != null && item.IsSelected())
@@ -210,11 +210,21 @@ public class ImageEditPopup : MonoBehaviour
             }
         }
     }
-
+    private ArtFrame FindArtFrameByFrameId(int frameId)
+    {
+        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+        foreach (var f in allFrames)
+        {
+            if (f != null && f.FrameId == frameId)
+                return f;
+        }
+        return null;
+    }
+    
     private void DisablePlayerControllers()
     {
         // Tìm tất cả PlayerController trong scene và disable chúng
-        playerControllers = FindObjectsOfType<PlayerController>();
+        playerControllers = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
         foreach (var controller in playerControllers)
         {
             if (controller != null && controller.enabled)
@@ -301,7 +311,7 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         string newName = nameInput != null ? nameInput.text.Trim() : currentImageData.name;
-        
+
         // Lấy thông tin author và description từ input fields
         string author = authorInput != null ? authorInput.text.Trim() : "";
         string description = descriptionInput != null ? descriptionInput.text.Trim() : "";
@@ -312,9 +322,30 @@ public class ImageEditPopup : MonoBehaviour
             return;
         }
 
+        // Lấy position/rotation hiện tại của ArtFrame theo frameUse
+        Vector3 position = Vector3.zero;
+        Vector3 rotation = Vector3.zero;
+
+        // Sử dụng hàm FindArtFrameByFrameId có sẵn để tìm frame
+        ArtFrame targetFrame = FindArtFrameByFrameId(currentImageData.frameUse);
+
+        if (targetFrame != null)
+        {
+            position = targetFrame.transform.position;
+            rotation = targetFrame.transform.eulerAngles;
+        }
+        else if (showDebug)
+        {
+            Debug.LogWarning($"[ImageEditPopup] Không tìm thấy ArtFrame với ID={currentImageData.frameUse}. Sử dụng position/rotation mặc định (0,0,0).");
+        }
+
         UpdateStatus("Saving...");
 
-        if (showDebug) Debug.Log($"[ImageEditPopup] Saving - Name: {newName}, Frame: {currentImageData.frameUse}, Author: {author}");
+        if (showDebug)
+        {
+            Debug.Log($"[ImageEditPopup] Saving - Name: {newName}, Frame: {currentImageData.frameUse}, Author: {author}, " +
+                     $"Position: {position}, Rotation: {rotation}, NewImage: {!string.IsNullOrEmpty(selectedImagePath)}");
+        }
 
         // Nếu có chọn ảnh mới
         if (!string.IsNullOrEmpty(selectedImagePath))
@@ -326,6 +357,8 @@ public class ImageEditPopup : MonoBehaviour
                 newName,
                 author,
                 description,
+                position,
+                rotation,
                 selectedImagePath,
                 OnUpdateComplete
             );
@@ -340,7 +373,9 @@ public class ImageEditPopup : MonoBehaviour
                 newName,
                 author,
                 description,
-                null,
+                position,
+                rotation,
+                null, // imageTexture = null vì không thay đổi ảnh
                 OnUpdateComplete
             );
         }
@@ -350,17 +385,18 @@ public class ImageEditPopup : MonoBehaviour
     {
         if (success)
         {
-            UpdateStatus("✅ Saved!");
+            UpdateStatus(" Saved!");
 
             if (showDebug) Debug.Log("[ImageEditPopup] Update successful");
 
-            // Refresh gallery
-            var gallery = FindFirstObjectByType<ImageGalleryContainer>();
+            // Refresh gallery - sửa đoạn này
+            var gallery = FindAnyObjectByType<ImageGalleryContainer>(); // thêm tham số true để tìm cả inactive objects
             if (gallery != null)
             {
+                if (showDebug) Debug.Log("[ImageEditPopup] Refreshing gallery");
                 gallery.RefreshGallery();
             }
-            
+
             // Refresh tất cả các ArtFrame hiển thị ảnh này
             if (updatedData != null)
             {
@@ -370,7 +406,7 @@ public class ImageEditPopup : MonoBehaviour
                     if (showDebug) Debug.Log($"[ImageEditPopup] Force refresh frame {updatedData.frameUse} trong ArtManager");
                     ArtManager.Instance.ForceRefreshFrame(updatedData.frameUse);
                 }
-                
+
                 // 2. Cập nhật tất cả ArtFrame trong scene sử dụng frameId này
                 RefreshAllArtFrames(updatedData.frameUse);
             }
@@ -380,17 +416,17 @@ public class ImageEditPopup : MonoBehaviour
         }
         else
         {
-            UpdateStatus($"❌ Error: {error}");
+            UpdateStatus($" Error: {error}");
             Debug.LogError($"[ImageEditPopup] Update failed: {error}");
         }
     }
-    
+
     // Phương thức mới để tìm và refresh tất cả ArtFrame sử dụng frameId
     private void RefreshAllArtFrames(int frameId)
     {
-        ArtFrame[] allFrames = FindObjectsOfType<ArtFrame>();
+        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
         int count = 0;
-        
+
         foreach (ArtFrame frame in allFrames)
         {
             if (frame != null && frame.FrameId == frameId)
@@ -400,7 +436,7 @@ public class ImageEditPopup : MonoBehaviour
                 count++;
             }
         }
-        
+
         if (showDebug) Debug.Log($"[ImageEditPopup] Đã refresh {count} ArtFrame với ID {frameId}");
     }
 
@@ -428,10 +464,10 @@ public class ImageEditPopup : MonoBehaviour
         {
             cancelButton.onClick.RemoveListener(Hide);
         }
-        
+
         // Ensure player controllers are enabled when destroying this object
         EnablePlayerControllers();
-        
+
         // Make sure to unselect items when destroyed
         UnselectAllImageItems();
     }

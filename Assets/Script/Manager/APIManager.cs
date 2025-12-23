@@ -46,6 +46,7 @@ public class APIManager : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool logRequests = true;
     [SerializeField] private bool logResponses = false;
+    [SerializeField] private bool logDetailedData = true;  // Thêm flag để log chi tiết dữ liệu
 
     private int currentRequests = 0;
     private const int MAX_CONCURRENT_REQUESTS = 5;
@@ -122,151 +123,49 @@ public class APIManager : MonoBehaviour
         }));
     }
 
-    /// <summary>
-    /// Lấy ảnh theo ID - Endpoint: GET /api/images/:id
-    /// </summary>
-    public void GetImageById(int imageId, ImageResponseCallback callback)
-    {
-        string url = $"{apiUrl}/images/{imageId}";
-        StartCoroutine(GetRequest<ImageResponse>(url, (success, response, error) =>
-        {
-            if (success && response != null && response.success)
-            {
-                callback?.Invoke(true, response.data, null);
-            }
-            else
-            {
-                callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-            }
-        }));
-    }
-
-    #endregion
-
-    #region POST APIs
-
-    /// <summary>
-    /// Tạo ảnh mới với upload file - Endpoint: POST /api/images
-    /// </summary>
-    public void CreateImage(string name, int frameUse, Texture2D imageTexture, ImageResponseCallback callback)
-    {
-        string url = $"{apiUrl}/images";
-
-        // Chuẩn bị form data với file ảnh
-        WWWForm form = new WWWForm();
-        form.AddField("name", name);
-        form.AddField("frameUse", frameUse.ToString());
-
-        if (imageTexture != null)
-        {
-            byte[] imageBytes = imageTexture.EncodeToPNG();
-            form.AddBinaryData("image", imageBytes, "image.png", "image/png");
-        }
-
-        StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
-        {
-            if (success && response != null && response.success)
-            {
-                callback?.Invoke(true, response.data, null);
-            }
-            else
-            {
-                callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-            }
-        }));
-    }
-
-    /// <summary>
-    /// Tạo ảnh mới từ đường dẫn file - Endpoint: POST /api/images
-    /// </summary>
-    public void CreateImageFromPath(string name, int frameUse, string localFilePath, ImageResponseCallback callback)
-    {
-        if (!File.Exists(localFilePath))
-        {
-            callback?.Invoke(false, null, $"File not found: {localFilePath}");
-            return;
-        }
-
-        try
-        {
-            byte[] imageBytes = File.ReadAllBytes(localFilePath);
-            string mimeType = GetMimeTypeFromExtension(Path.GetExtension(localFilePath));
-            string fileName = Path.GetFileName(localFilePath);
-
-            string url = $"{apiUrl}/images";
-            WWWForm form = new WWWForm();
-            form.AddField("name", name);
-            form.AddField("frameUse", frameUse.ToString());
-            form.AddBinaryData("image", imageBytes, fileName, mimeType);
-
-            StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
-            {
-                if (success && response != null && response.success)
-                {
-                    callback?.Invoke(true, response.data, null);
-                }
-                else
-                {
-                    callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-                }
-            }));
-        }
-        catch (Exception ex)
-        {
-            callback?.Invoke(false, null, $"Error reading file: {ex.Message}");
-        }
-    }
-
     #endregion
 
     #region PUT APIs
 
     /// <summary>
-    /// Cập nhật ảnh theo ID - Endpoint: PUT /api/images/:id
-    /// </summary>
-    public void UpdateImageById(int imageId, string name, int frameUse, Texture2D imageTexture, ImageResponseCallback callback)
-    {
-        string url = $"{apiUrl}/images/{imageId}";
-
-        WWWForm form = new WWWForm();
-        form.AddField("name", name);
-        form.AddField("frameUse", frameUse.ToString());
-
-        if (imageTexture != null)
-        {
-            byte[] imageBytes = imageTexture.EncodeToPNG();
-            form.AddBinaryData("image", imageBytes, "image.png", "image/png");
-        }
-
-        StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
-        {
-            if (success && response != null && response.success)
-            {
-                callback?.Invoke(true, response.data, null);
-            }
-            else
-            {
-                callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-            }
-        }));
-    }
-
-    /// <summary>
     /// Cập nhật ảnh theo frame - Endpoint: PUT /api/images/frame/:frame
     /// </summary>
-    public void UpdateImageByFrame(int frameId, string name, string author, string description, Texture2D imageTexture, ImageResponseCallback callback)
+    public void UpdateImageByFrame(
+    int frameId,
+    string name,
+    string author,
+    string description,
+    Vector3 position,
+    Vector3 rotationEuler,
+    Texture2D imageTexture,
+    ImageResponseCallback callback)
     {
         string url = $"{apiUrl}/images/frame/{frameId}";
 
         WWWForm form = new WWWForm();
         form.AddField("name", name);
 
-        // Thêm author và description vào form
         if (!string.IsNullOrEmpty(author))
             form.AddField("author", author);
 
         if (!string.IsNullOrEmpty(description))
             form.AddField("description", description);
+
+        // Gửi các trường positionX, positionY, positionZ riêng biệt theo đúng định dạng server mong đợi
+        form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        // Gửi các trường rotationX, rotationY, rotationZ riêng biệt
+        form.AddField("rotationX", rotationEuler.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("rotationY", rotationEuler.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("rotationZ", rotationEuler.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        if (logDetailedData)
+        {
+            Debug.Log($"[APIManager] UpdateImageByFrame - Position: ({position.x}, {position.y}, {position.z})");
+            Debug.Log($"[APIManager] UpdateImageByFrame - Rotation: ({rotationEuler.x}, {rotationEuler.y}, {rotationEuler.z})");
+        }
 
         if (imageTexture != null)
         {
@@ -277,20 +176,24 @@ public class APIManager : MonoBehaviour
         StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
         {
             if (success && response != null && response.success)
-            {
                 callback?.Invoke(true, response.data, null);
-            }
             else
-            {
                 callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-            }
         }));
     }
 
     /// <summary>
     /// Cập nhật ảnh theo frame từ đường dẫn file - Endpoint: PUT /api/images/frame/:frame
     /// </summary>
-    public void UpdateImageByFrameFromPath(int frameId, string name, string author, string description, string localFilePath, ImageResponseCallback callback)
+    public void UpdateImageByFrameFromPath(
+    int frameId,
+    string name,
+    string author,
+    string description,
+    Vector3 position,
+    Vector3 rotationEuler,
+    string localFilePath,
+    ImageResponseCallback callback)
     {
         if (!File.Exists(localFilePath))
         {
@@ -308,25 +211,36 @@ public class APIManager : MonoBehaviour
             WWWForm form = new WWWForm();
             form.AddField("name", name);
 
-            // Thêm author và description vào form
             if (!string.IsNullOrEmpty(author))
                 form.AddField("author", author);
 
             if (!string.IsNullOrEmpty(description))
                 form.AddField("description", description);
 
+            // Gửi các trường positionX, positionY, positionZ riêng biệt theo đúng định dạng server mong đợi
+            form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            // Gửi các trường rotationX, rotationY, rotationZ riêng biệt
+            form.AddField("rotationX", rotationEuler.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("rotationY", rotationEuler.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("rotationZ", rotationEuler.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            if (logDetailedData)
+            {
+                Debug.Log($"[APIManager] UpdateImageByFrameFromPath - Position: ({position.x}, {position.y}, {position.z})");
+                Debug.Log($"[APIManager] UpdateImageByFrameFromPath - Rotation: ({rotationEuler.x}, {rotationEuler.y}, {rotationEuler.z})");
+            }
+
             form.AddBinaryData("image", imageBytes, fileName, mimeType);
 
             StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
             {
                 if (success && response != null && response.success)
-                {
                     callback?.Invoke(true, response.data, null);
-                }
                 else
-                {
                     callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-                }
             }));
         }
         catch (Exception ex)
@@ -334,51 +248,6 @@ public class APIManager : MonoBehaviour
             callback?.Invoke(false, null, $"Error reading file: {ex.Message}");
         }
     }
-
-    #endregion
-
-    #region DELETE APIs
-
-    /// <summary>
-    /// Xóa ảnh theo ID - Endpoint: DELETE /api/images/:id
-    /// </summary>
-    public void DeleteImageById(int imageId, ActionResponseCallback callback)
-    {
-        string url = $"{apiUrl}/images/{imageId}";
-
-        StartCoroutine(DeleteRequest<ImageActionResponse>(url, (success, response, error) =>
-        {
-            if (success && response != null && response.success)
-            {
-                callback?.Invoke(true, response.message);
-            }
-            else
-            {
-                callback?.Invoke(false, error ?? response?.message ?? "Unknown error");
-            }
-        }));
-    }
-
-    /// <summary>
-    /// Xóa ảnh theo frame - Endpoint: DELETE /api/images/frame/:frame
-    /// </summary>
-    public void DeleteImageByFrame(int frameId, ActionResponseCallback callback)
-    {
-        string url = $"{apiUrl}/images/frame/{frameId}";
-
-        StartCoroutine(DeleteRequest<ImageActionResponse>(url, (success, response, error) =>
-        {
-            if (success && response != null && response.success)
-            {
-                callback?.Invoke(true, response.message);
-            }
-            else
-            {
-                callback?.Invoke(false, error ?? response?.message ?? "Unknown error");
-            }
-        }));
-    }
-
     #endregion
 
     #region Helper Methods
@@ -553,62 +422,6 @@ public class APIManager : MonoBehaviour
     }
 
     /// <summary>
-    /// DELETE Request generic với retry
-    /// </summary>
-    private IEnumerator DeleteRequest<T>(string url, Action<bool, T, string> callback, int retryCount = 0) where T : class
-    {
-        if (currentRequests >= MAX_CONCURRENT_REQUESTS)
-        {
-            yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
-        }
-
-        currentRequests++;
-
-        if (logRequests) Debug.Log($"[APIManager] DELETE Request: {url}");
-
-        using (UnityWebRequest request = UnityWebRequest.Delete(url))
-        {
-            request.timeout = Mathf.RoundToInt(requestTimeout);
-
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                if (retryCount < maxRetries)
-                {
-                    Debug.LogWarning($"[APIManager] Request failed: {request.error}. Retrying {retryCount + 1}/{maxRetries}...");
-                    currentRequests--;
-                    yield return new WaitForSeconds(retryDelay);
-                    yield return StartCoroutine(DeleteRequest<T>(url, callback, retryCount + 1));
-                    yield break;
-                }
-
-                Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
-                callback?.Invoke(false, null, request.error);
-                currentRequests--;
-                yield break;
-            }
-
-            string responseText = request.downloadHandler.text;
-
-            if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-
-            try
-            {
-                T response = JsonUtility.FromJson<T>(responseText);
-                callback?.Invoke(true, response, null);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
-                callback?.Invoke(false, null, $"Parsing error: {e.Message}");
-            }
-
-            currentRequests--;
-        }
-    }
-
-    /// <summary>
     /// Lấy MIME type từ extension của file
     /// </summary>
     private string GetMimeTypeFromExtension(string extension)
@@ -691,82 +504,7 @@ public class APIManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Chuyển đổi Sprite thành Texture2D
-    /// </summary>
-    public Texture2D SpriteToTexture2D(Sprite sprite)
-    {
-        if (sprite == null) return null;
-
-        try
-        {
-            Texture2D texture = new Texture2D(
-                (int)sprite.rect.width,
-                (int)sprite.rect.height,
-                TextureFormat.RGBA32,
-                false);
-
-            var pixels = sprite.texture.GetPixels(
-                (int)sprite.rect.x,
-                (int)sprite.rect.y,
-                (int)sprite.rect.width,
-                (int)sprite.rect.height);
-
-            texture.SetPixels(pixels);
-            texture.Apply();
-
-            return texture;
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[APIManager] Error converting sprite to texture: {ex.Message}");
-            return null;
-        }
-    }
-
     #endregion
-
-    /// <summary>
-    /// Lấy thời gian từ server
-    /// </summary>
-    public void GetServerTime(Action<DateTime?> callback)
-    {
-        // Thực hiện một request đơn giản để lấy header Date từ server
-        StartCoroutine(GetServerTimeCoroutine(callback));
-    }
-
-    private IEnumerator GetServerTimeCoroutine(Action<DateTime?> callback)
-    {
-        using (UnityWebRequest request = UnityWebRequest.Get(baseUrl))
-        {
-            request.timeout = 5;
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-            {
-                string dateStr = request.GetResponseHeader("Date");
-                if (!string.IsNullOrEmpty(dateStr))
-                {
-                    if (DateTime.TryParse(dateStr, out DateTime serverTime))
-                    {
-                        callback?.Invoke(serverTime);
-                    }
-                    else
-                    {
-                        callback?.Invoke(null);
-                    }
-                }
-                else
-                {
-                    callback?.Invoke(null);
-                }
-            }
-            else
-            {
-                callback?.Invoke(null);
-            }
-        }
-    }
 
     // Public getter cho các URL
     public string BaseURL => baseUrl;
