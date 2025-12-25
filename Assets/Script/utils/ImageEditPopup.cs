@@ -28,6 +28,7 @@ public class ImageEditPopup : MonoBehaviour
     [SerializeField] private TMP_InputField imageFileInput;
     [SerializeField] private TMP_InputField authorInput;
     [SerializeField] private TMP_InputField descriptionInput;
+    [SerializeField] private TMP_Dropdown imageTypeDropdown; // ✅ THÊM MỚI
     [SerializeField] private Button browseButton;
     [SerializeField] private Button saveButton;
     [SerializeField] private Button cancelButton;
@@ -88,6 +89,9 @@ public class ImageEditPopup : MonoBehaviour
         // Setup input fields
         SetupInputFields();
 
+        // ✅ Setup dropdown
+        SetupImageTypeDropdown();
+
         // Hide initially
         Hide();
 
@@ -147,6 +151,32 @@ public class ImageEditPopup : MonoBehaviour
         // Image file input is read-only
         if (imageFileInput != null)
             imageFileInput.interactable = false;
+    }
+
+    /// <summary>
+    /// ✅ Setup dropdown với 2 options: "ngang" và "dọc"
+    /// </summary>
+    private void SetupImageTypeDropdown()
+    {
+        if (imageTypeDropdown == null)
+        {
+            Debug.LogWarning("[ImageEditPopup] Image Type Dropdown is not assigned!");
+            return;
+        }
+
+        imageTypeDropdown.ClearOptions();
+
+        List<string> options = new List<string>
+        {
+            "ngang",  // Landscape
+            "dọc"     // Portrait
+        };
+
+        imageTypeDropdown.AddOptions(options);
+        imageTypeDropdown.value = 0; // Default: ngang
+
+        if (showDebug)
+            Debug.Log("[ImageEditPopup] Image type dropdown setup complete");
     }
 
     #endregion
@@ -256,9 +286,18 @@ public class ImageEditPopup : MonoBehaviour
         if (descriptionInput != null)
             descriptionInput.text = currentImageData.description ?? "";
 
+        // ✅ Image Type - THÊM DEBUG
+        if (showDebug)
+        {
+            Debug.Log($"[ImageEditPopup] PopulateUI - ImageData.imageType: '{currentImageData.imageType}'");
+            Debug.Log($"[ImageEditPopup] PopulateUI - Is null or empty: {string.IsNullOrEmpty(currentImageData.imageType)}");
+        }
+
+        SetImageTypeDropdown(currentImageData.imageType);
+
         // Delete button visibility
         if (deleteButton != null)
-            deleteButton.gameObject.SetActive(!isNewFrame); // Chỉ hiện delete cho frame đã tồn tại
+            deleteButton.gameObject.SetActive(!isNewFrame);
 
         // Status
         UpdateStatus(isNewFrame ? "Creating new frame" : "Ready to edit");
@@ -266,6 +305,84 @@ public class ImageEditPopup : MonoBehaviour
         // Clear preview
         if (previewImage != null)
             previewImage.sprite = null;
+    }
+
+    /// <summary>
+    /// ✅ Set giá trị dropdown từ imageType
+    /// </summary>
+    private void SetImageTypeDropdown(string imageType)
+    {
+        if (imageTypeDropdown == null)
+        {
+            Debug.LogWarning("[ImageEditPopup] Image Type Dropdown is null!");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(imageType))
+        {
+            imageTypeDropdown.value = 0; // Default: ngang
+
+            if (showDebug)
+                Debug.Log("[ImageEditPopup] ImageType is empty, set to default: ngang");
+
+            return;
+        }
+
+        // ✅ Normalize và trim
+        string normalizedType = imageType.Trim().ToLower();
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Setting dropdown for imageType: '{imageType}' (normalized: '{normalizedType}')");
+
+        // ✅ So sánh với nhiều biến thể
+        if (normalizedType == "landscape" ||
+            normalizedType == "ngang" ||
+            normalizedType.Contains("ngang") ||
+            normalizedType.Contains("landscape"))
+        {
+            imageTypeDropdown.value = 0; // ngang
+
+            if (showDebug)
+                Debug.Log($"[ImageEditPopup] Set dropdown to: ngang (index 0)");
+        }
+        else if (normalizedType == "portrait" ||
+                 normalizedType == "dọc" ||
+                 normalizedType == "doc" || // Fallback không dấu
+                 normalizedType.Contains("dọc") ||
+                 normalizedType.Contains("doc") ||
+                 normalizedType.Contains("portrait"))
+        {
+            imageTypeDropdown.value = 1; // dọc
+
+            if (showDebug)
+                Debug.Log($"[ImageEditPopup] Set dropdown to: dọc (index 1)");
+        }
+        else
+        {
+            // Unknown type - default to ngang
+            imageTypeDropdown.value = 0;
+
+            if (showDebug)
+                Debug.LogWarning($"[ImageEditPopup] Unknown imageType: '{imageType}', defaulting to ngang");
+        }
+
+        // ✅ Verify selection
+        if (showDebug)
+        {
+            string selectedText = imageTypeDropdown.options[imageTypeDropdown.value].text;
+            Debug.Log($"[ImageEditPopup] Dropdown now shows: '{selectedText}' (index: {imageTypeDropdown.value})");
+        }
+    }
+
+    /// <summary>
+    /// ✅ Lấy giá trị imageType từ dropdown
+    /// </summary>
+    private string GetSelectedImageType()
+    {
+        if (imageTypeDropdown == null)
+            return "ngang"; // Default
+
+        return imageTypeDropdown.options[imageTypeDropdown.value].text;
     }
 
     private string GetFileNameFromUrl(string url)
@@ -370,6 +487,7 @@ public class ImageEditPopup : MonoBehaviour
         // Prepare data
         string author = authorInput != null ? authorInput.text.Trim() : "";
         string description = descriptionInput != null ? descriptionInput.text.Trim() : "";
+        string imageType = GetSelectedImageType(); // ✅ Lấy từ dropdown
 
         // Create ImageData object
         ImageData dataToSend = new ImageData
@@ -378,9 +496,13 @@ public class ImageEditPopup : MonoBehaviour
             name = newName,
             author = author,
             description = description,
+            imageType = imageType, // ✅ Thêm imageType
             position = new Position { x = position.x, y = position.y, z = position.z },
             rotation = new Rotation { x = rotation.x, y = rotation.y, z = rotation.z }
         };
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Image type selected: {imageType}");
 
         UpdateStatus("Saving...");
 

@@ -224,6 +224,7 @@ public class APIManager : MonoBehaviour
             Debug.Log($"  URL: {url}");
             Debug.Log($"  Frame: {imageData.frameUse}");
             Debug.Log($"  Name: {imageData.name}");
+            Debug.Log($"  ImageType: {imageData.imageType}"); 
         }
 
         StartCoroutine(UploadImageRequest(url, imageData, imageBytes, "POST", callback));
@@ -246,6 +247,7 @@ public class APIManager : MonoBehaviour
             Debug.Log($"  URL: {url}");
             Debug.Log($"  Frame: {imageData.frameUse}");
             Debug.Log($"  Name: {imageData.name}");
+            Debug.Log($"  ImageType: {imageData.imageType}"); // ✅ Log imageType
         }
 
         StartCoroutine(UploadImageRequest(url, imageData, imageBytes, "PUT", callback));
@@ -253,6 +255,7 @@ public class APIManager : MonoBehaviour
 
     /// <summary>
     /// ✅ Upload image request - Unified cho cả POST và PUT
+    /// Bao gồm imageType
     /// </summary>
     private IEnumerator UploadImageRequest(string url, ImageData imageData, byte[] imageBytes, string method, ActionResponseCallback callback)
     {
@@ -273,6 +276,23 @@ public class APIManager : MonoBehaviour
         form.AddField("frameUse", imageData.frameUse);
         form.AddField("author", imageData.author ?? "");
         form.AddField("description", imageData.description ?? "");
+
+        // ✅ Add imageType
+        if (!string.IsNullOrEmpty(imageData.imageType))
+        {
+            form.AddField("imageType", imageData.imageType);
+
+            if (logDetailedData)
+                Debug.Log($"[APIManager] ImageType: {imageData.imageType}");
+        }
+        else
+        {
+            // Default nếu không có
+            form.AddField("imageType", "ngang");
+
+            if (logDetailedData)
+                Debug.Log($"[APIManager] ImageType: ngang (default)");
+        }
 
         // Add position (sử dụng format positionX, positionY, positionZ)
         if (imageData.position != null)
@@ -411,6 +431,7 @@ public class APIManager : MonoBehaviour
     }
 
     #endregion
+
     #region DELETE APIs
 
     /// <summary>

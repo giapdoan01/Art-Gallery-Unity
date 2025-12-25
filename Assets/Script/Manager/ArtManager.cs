@@ -23,6 +23,7 @@ public class ImageData
     public string url;
     public int frameUse;
     public string hash;
+    public string imageType;
     public long lastModified;
     public string author;
     public string description;

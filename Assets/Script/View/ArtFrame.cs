@@ -8,6 +8,7 @@ using System.Collections.Generic;
 /// ArtFrame - Component đại diện cho một khung tranh trong scene
 /// Sử dụng ArtManager để load và cache ảnh
 /// Sử dụng APIManager để lấy metadata và update transform
+/// Hỗ trợ 2 loại khung: ngang (landscape) và dọc (portrait)
 /// </summary>
 [RequireComponent(typeof(MeshRenderer))]
 public class ArtFrame : MonoBehaviour
@@ -20,13 +21,26 @@ public class ArtFrame : MonoBehaviour
     [SerializeField] private MeshRenderer quadRenderer;
     [SerializeField] private Transform cubeFrame;
 
+    [Header("Frame Types - Assign Both")]
+    [SerializeField] private Transform landscapeFrame; // ✅ Khung ngang (KHÔNG scale)
+    [SerializeField] private Transform portraitFrame;  // ✅ Khung dọc (KHÔNG scale)
+
     [Header("Loading")]
     [SerializeField] private Texture2D loadingTexture;
     [SerializeField] private bool loadOnStart = true;
 
     [Header("Auto Resize")]
     [SerializeField] private bool autoResize = true;
+
+    [Header("Quad Resize Settings")]
+    [Tooltip("Khi resize, giữ nguyên chiều ngang của quad cho ảnh dọc")]
+    [SerializeField] private bool useQuadOriginalSize = true;
+    
+    [Header("Manual Override (nếu không dùng original size)")]
+    [SerializeField] private float landscapeFixedHeight = 2f; // Cho ảnh ngang
+    [SerializeField] private float portraitFixedWidth = 1.5f; // Cho ảnh dọc
     [SerializeField] private Vector2 widthLimits = new Vector2(0.5f, 10f);
+    [SerializeField] private Vector2 heightLimits = new Vector2(0.5f, 10f);
 
     [Header("Transform Sync")]
     [SerializeField] private bool syncTransformFromServer = true;
@@ -56,6 +70,11 @@ public class ArtFrame : MonoBehaviour
     private Vector3 lastScale;
     private Camera mainCamera;
     private bool isLoading = false;
+    private string currentFrameType = ""; // ✅ "ngang" hoặc "dọc"
+    
+    // ✅ Lưu kích thước ban đầu của quad từ prefab
+    private Vector3 quadOriginalScale;
+    private bool hasStoredOriginalScale = false;
 
     // Properties
     public int FrameId => frameId;
@@ -65,6 +84,7 @@ public class ArtFrame : MonoBehaviour
     public bool IsLoaded => currentSprite != null && currentImageData != null;
     public bool IsLoading => isLoading || (ArtManager.Instance != null && ArtManager.Instance.IsImageLoading(frameId));
     public GameObject ButtonContainer => buttonContainer;
+    public string CurrentFrameType => currentFrameType;
 
     #region Unity Lifecycle
 
@@ -81,10 +101,27 @@ public class ArtFrame : MonoBehaviour
             cubeFrame = transform;
         }
 
+        // ✅ Lưu kích thước ban đầu của quad
+        if (quadRenderer != null && !hasStoredOriginalScale)
+        {
+            quadOriginalScale = quadRenderer.transform.localScale;
+            hasStoredOriginalScale = true;
+
+            if (showDebug)
+                Debug.Log($"[ArtFrame] Stored quad original scale: {quadOriginalScale}", this);
+        }
+
         // Lưu transform hiện tại
         lastPosition = transform.position;
         lastRotation = transform.rotation;
         lastScale = transform.localScale;
+
+        // ✅ Ẩn cả 2 khung ban đầu
+        if (landscapeFrame != null)
+            landscapeFrame.gameObject.SetActive(false);
+
+        if (portraitFrame != null)
+            portraitFrame.gameObject.SetActive(false);
 
         // Ẩn button container ban đầu
         if (buttonContainer != null)
@@ -164,6 +201,20 @@ public class ArtFrame : MonoBehaviour
         {
             cubeFrame = transform;
         }
+
+        // ✅ Validate frame references
+        if (landscapeFrame == null)
+            Debug.LogWarning("[ArtFrame] Landscape frame not assigned!", this);
+
+        if (portraitFrame == null)
+            Debug.LogWarning("[ArtFrame] Portrait frame not assigned!", this);
+
+        // ✅ Lưu original scale trong editor
+        if (quadRenderer != null && !hasStoredOriginalScale && !Application.isPlaying)
+        {
+            quadOriginalScale = quadRenderer.transform.localScale;
+            hasStoredOriginalScale = true;
+        }
     }
 
     #endregion
@@ -208,11 +259,16 @@ public class ArtFrame : MonoBehaviour
         currentImageData = data;
         isLoading = false;
 
+        // ✅ Xử lý frame type và hiển thị
+        string frameType = GetFrameType(data, sprite);
+        SetFrameVisibility(frameType);
+
         ApplyArtwork(sprite);
 
+        // ✅ Resize quad theo tỷ lệ ảnh
         if (autoResize && sprite != null && sprite.texture != null)
         {
-            ResizeFrameByImageRatio(sprite.texture);
+            ResizeQuadByImageRatio(sprite.texture, frameType);
         }
 
         // Sync transform from server if enabled
@@ -281,11 +337,16 @@ public class ArtFrame : MonoBehaviour
         currentSprite = sprite;
         currentImageData = data;
 
+        // ✅ Xử lý frame type
+        string frameType = GetFrameType(data, sprite);
+        SetFrameVisibility(frameType);
+
         ApplyArtwork(sprite);
 
+        // ✅ Resize quad theo tỷ lệ ảnh
         if (autoResize && sprite.texture != null)
         {
-            ResizeFrameByImageRatio(sprite.texture);
+            ResizeQuadByImageRatio(sprite.texture, frameType);
         }
 
         // Apply transform from server data
@@ -295,7 +356,7 @@ public class ArtFrame : MonoBehaviour
         }
 
         if (showDebug)
-            Debug.Log($"[ArtFrame] Artwork loaded successfully for frame {frameId}", this);
+            Debug.Log($"[ArtFrame] Artwork loaded successfully for frame {frameId} (Type: {frameType})", this);
     }
 
     /// <summary>
@@ -353,12 +414,26 @@ public class ArtFrame : MonoBehaviour
         // Clear local references
         currentSprite = null;
         currentImageData = null;
+        currentFrameType = "";
 
         // Cleanup material
         if (currentMaterial != null)
         {
             Destroy(currentMaterial);
             currentMaterial = null;
+        }
+
+        // ✅ Ẩn cả 2 khung
+        if (landscapeFrame != null)
+            landscapeFrame.gameObject.SetActive(false);
+
+        if (portraitFrame != null)
+            portraitFrame.gameObject.SetActive(false);
+
+        // ✅ Reset quad về kích thước ban đầu
+        if (quadRenderer != null && hasStoredOriginalScale)
+        {
+            quadRenderer.transform.localScale = quadOriginalScale;
         }
 
         // Show loading texture
@@ -379,36 +454,179 @@ public class ArtFrame : MonoBehaviour
 
     #endregion
 
-    #region Auto Resize
+    #region Frame Type Handling
 
     /// <summary>
-    /// Resize frame theo tỷ lệ ảnh
+    /// ✅ Lấy frame type từ ImageData hoặc tự động detect
     /// </summary>
-    private void ResizeFrameByImageRatio(Texture2D texture)
+    private string GetFrameType(ImageData data, Sprite sprite)
     {
-        if (texture == null || cubeFrame == null)
+        string frameType = "";
+
+        // Ưu tiên lấy từ server
+        if (data != null && !string.IsNullOrEmpty(data.imageType))
+        {
+            frameType = data.imageType;
+        }
+        // Fallback: Tự động detect từ tỷ lệ ảnh
+        else if (sprite != null && sprite.texture != null)
+        {
+            float aspectRatio = (float)sprite.texture.width / sprite.texture.height;
+            frameType = aspectRatio >= 1f ? "ngang" : "dọc";
+
+            if (showDebug)
+                Debug.Log($"[ArtFrame] Auto-detected frame type: {frameType} (aspect: {aspectRatio:F2})", this);
+        }
+        else
+        {
+            frameType = "ngang"; // Default
+        }
+
+        currentFrameType = frameType;
+        return frameType;
+    }
+
+    /// <summary>
+    /// ✅ Hiện/ẩn khung dựa trên frame type (KHÔNG scale frame)
+    /// </summary>
+    private void SetFrameVisibility(string frameType)
+    {
+        bool isLandscape = frameType.ToLower() == "ngang" || frameType.ToLower() == "landscape";
+        bool isPortrait = frameType.ToLower() == "dọc" || frameType.ToLower() == "portrait";
+
+        // Hiện khung ngang, ẩn khung dọc
+        if (isLandscape)
+        {
+            if (landscapeFrame != null)
+                landscapeFrame.gameObject.SetActive(true);
+
+            if (portraitFrame != null)
+                portraitFrame.gameObject.SetActive(false);
+
+            if (showDebug)
+                Debug.Log($"[ArtFrame] Showing landscape frame, hiding portrait frame", this);
+        }
+        // Hiện khung dọc, ẩn khung ngang
+        else if (isPortrait)
+        {
+            if (landscapeFrame != null)
+                landscapeFrame.gameObject.SetActive(false);
+
+            if (portraitFrame != null)
+                portraitFrame.gameObject.SetActive(true);
+
+            if (showDebug)
+                Debug.Log($"[ArtFrame] Showing portrait frame, hiding landscape frame", this);
+        }
+        // Unknown type - hiện landscape mặc định
+        else
         {
             if (showDebug)
-                Debug.LogWarning($"[ArtFrame] Cannot resize: texture or cubeFrame is null", this);
+                Debug.LogWarning($"[ArtFrame] Unknown frame type: {frameType}, showing landscape by default", this);
+
+            if (landscapeFrame != null)
+                landscapeFrame.gameObject.SetActive(true);
+
+            if (portraitFrame != null)
+                portraitFrame.gameObject.SetActive(false);
+        }
+
+        // ✅ Frame KHÔNG bao giờ scale, giữ nguyên kích thước ban đầu
+    }
+
+    #endregion
+
+    #region Auto Resize Quad
+
+    /// <summary>
+    /// ✅ Resize QUAD theo tỷ lệ ảnh, dựa trên kích thước ban đầu của quad
+    /// - Ảnh NGANG: Giữ nguyên CHIỀU CAO ban đầu, scale chiều rộng
+    /// - Ảnh DỌC: Giữ nguyên CHIỀU NGANG ban đầu, scale chiều cao
+    /// - Frame KHÔNG scale
+    /// </summary>
+    private void ResizeQuadByImageRatio(Texture2D texture, string frameType)
+    {
+        if (texture == null || quadRenderer == null)
+        {
+            if (showDebug)
+                Debug.LogWarning($"[ArtFrame] Cannot resize: texture or quadRenderer is null", this);
             return;
         }
 
-        float currentHeight = cubeFrame.localScale.y;
-        float imageRatio = (float)texture.width / (float)texture.height;
-        float newWidth = currentHeight * imageRatio;
-        
-        // Clamp width
-        newWidth = Mathf.Clamp(newWidth, widthLimits.x, widthLimits.y);
+        if (!hasStoredOriginalScale)
+        {
+            Debug.LogWarning($"[ArtFrame] Original quad scale not stored!", this);
+            return;
+        }
 
-        Vector3 newScale = new Vector3(newWidth, currentHeight, cubeFrame.localScale.z);
-        cubeFrame.localScale = newScale;
+        float aspectRatio = (float)texture.width / (float)texture.height;
+        Vector3 newScale = quadRenderer.transform.localScale;
+
+        bool isLandscape = frameType.ToLower() == "ngang" || frameType.ToLower() == "landscape";
+
+        if (isLandscape)
+        {
+            // ✅ ẢNH NGANG: Giữ nguyên CHIỀU CAO ban đầu của quad, scale chiều rộng
+            if (useQuadOriginalSize)
+            {
+                newScale.y = quadOriginalScale.y; // Giữ nguyên chiều cao ban đầu
+                newScale.x = quadOriginalScale.y * aspectRatio; // Scale chiều rộng theo tỷ lệ
+            }
+            else
+            {
+                newScale.y = landscapeFixedHeight;
+                newScale.x = landscapeFixedHeight * aspectRatio;
+            }
+
+            // Clamp width
+            newScale.x = Mathf.Clamp(newScale.x, widthLimits.x, widthLimits.y);
+
+            if (showDebug)
+            {
+                Debug.Log($"[ArtFrame] Landscape quad resize:");
+                Debug.Log($"  Original quad scale: {quadOriginalScale}");
+                Debug.Log($"  Fixed height: {newScale.y:F2}");
+                Debug.Log($"  Calculated width: {newScale.x:F2}");
+                Debug.Log($"  Aspect ratio: {aspectRatio:F2}");
+            }
+        }
+        else
+        {
+            // ✅ ẢNH DỌC: Giữ nguyên CHIỀU NGANG ban đầu của quad, scale chiều cao
+            if (useQuadOriginalSize)
+            {
+                newScale.x = quadOriginalScale.x; // Giữ nguyên chiều ngang ban đầu
+                newScale.y = quadOriginalScale.x / aspectRatio; // Scale chiều cao theo tỷ lệ
+            }
+            else
+            {
+                newScale.x = portraitFixedWidth;
+                newScale.y = portraitFixedWidth / aspectRatio;
+            }
+
+            // Clamp height
+            newScale.y = Mathf.Clamp(newScale.y, heightLimits.x, heightLimits.y);
+
+            if (showDebug)
+            {
+                Debug.Log($"[ArtFrame] Portrait quad resize:");
+                Debug.Log($"  Original quad scale: {quadOriginalScale}");
+                Debug.Log($"  Fixed width: {newScale.x:F2}");
+                Debug.Log($"  Calculated height: {newScale.y:F2}");
+                Debug.Log($"  Aspect ratio: {aspectRatio:F2}");
+            }
+        }
+
+        // Keep Z scale unchanged
+        newScale.z = quadRenderer.transform.localScale.z;
+
+        // ✅ CHỈ scale QUAD, KHÔNG scale frame
+        quadRenderer.transform.localScale = newScale;
 
         if (showDebug)
         {
-            Debug.Log($"[ArtFrame] Resized frame {frameId}:\n" +
-                      $"  Texture: {texture.width}x{texture.height}\n" +
-                      $"  Ratio: {imageRatio:F2}\n" +
-                      $"  New Scale: {newScale}", this);
+            Debug.Log($"[ArtFrame] Quad resized to: {newScale}");
+            Debug.Log($"[ArtFrame] Frame scale unchanged (landscape: {(landscapeFrame != null ? landscapeFrame.localScale.ToString() : "null")}, portrait: {(portraitFrame != null ? portraitFrame.localScale.ToString() : "null")})");
         }
     }
 
@@ -419,11 +637,26 @@ public class ArtFrame : MonoBehaviour
     {
         if (currentSprite != null && currentSprite.texture != null)
         {
-            ResizeFrameByImageRatio(currentSprite.texture);
+            string frameType = GetFrameType(currentImageData, currentSprite);
+            ResizeQuadByImageRatio(currentSprite.texture, frameType);
         }
         else
         {
             Debug.LogWarning($"[ArtFrame] Cannot resize: No sprite loaded", this);
+        }
+    }
+
+    /// <summary>
+    /// ✅ Reset quad về kích thước ban đầu
+    /// </summary>
+    public void ResetQuadToOriginalSize()
+    {
+        if (quadRenderer != null && hasStoredOriginalScale)
+        {
+            quadRenderer.transform.localScale = quadOriginalScale;
+
+            if (showDebug)
+                Debug.Log($"[ArtFrame] Reset quad to original size: {quadOriginalScale}", this);
         }
     }
 
@@ -484,7 +717,7 @@ public class ArtFrame : MonoBehaviour
 
         // Lấy ImageData từ cache hoặc server
         ImageData cachedData = ArtManager.Instance.GetCachedImageData(frameId);
-        
+
         if (cachedData != null)
         {
             ApplyTransformFromImageData(cachedData);
@@ -833,6 +1066,31 @@ public class ArtFrame : MonoBehaviour
 
     #endregion
 
+    #region Public Methods
+
+    /// <summary>
+    /// Set frame ID từ bên ngoài
+    /// </summary>
+    public void SetFrameId(int id)
+    {
+        frameId = id;
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Frame ID set to: {id}", this);
+    }
+
+    /// <summary>
+    /// Set frame name từ bên ngoài
+    /// </summary>
+    public void SetFrameName(string name)
+    {
+        frameName = name;
+        gameObject.name = $"ArtFrame_{frameId}_{name}";
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Frame name set to: {name}", this);
+    }
+
+    #endregion
+
     #region Cleanup
 
     /// <summary>
@@ -861,6 +1119,7 @@ public class ArtFrame : MonoBehaviour
         // Clear references
         currentSprite = null;
         currentImageData = null;
+        currentFrameType = "";
 
         if (showDebug)
             Debug.Log($"[ArtFrame] Resources cleaned up for frame {frameId}", this);
@@ -872,11 +1131,25 @@ public class ArtFrame : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
-        // Draw frame bounds
-        if (showDebug && cubeFrame != null)
+        // Draw quad bounds
+        if (showDebug && quadRenderer != null)
+        {
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireCube(quadRenderer.transform.position, quadRenderer.transform.localScale);
+        }
+
+        // Draw frame bounds (landscape)
+        if (showDebug && landscapeFrame != null && landscapeFrame.gameObject.activeSelf)
         {
             Gizmos.color = Color.cyan;
-            Gizmos.DrawWireCube(cubeFrame.position, cubeFrame.localScale);
+            Gizmos.DrawWireCube(landscapeFrame.position, landscapeFrame.localScale);
+        }
+
+        // Draw frame bounds (portrait)
+        if (showDebug && portraitFrame != null && portraitFrame.gameObject.activeSelf)
+        {
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawWireCube(portraitFrame.position, portraitFrame.localScale);
         }
 
         // Draw button visibility range
