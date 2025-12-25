@@ -2125,7 +2125,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &361344120
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4461,7 +4461,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &719259059
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4643,7 +4643,7 @@ GameObject:
   - component: {fileID: 730800285}
   - component: {fileID: 730800284}
   m_Layer: 0
-  m_Name: ArtPrefabManager
+  m_Name: "\u1EA2tPrefabManager"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -7564,6 +7564,55 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: -1799315440135604771, guid: acf6505c69bd41f4bbee32f28a74c97e, type: 3}
+--- !u!1 &1181862356
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1181862358}
+  - component: {fileID: 1181862357}
+  m_Layer: 0
+  m_Name: SinglePlayerManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1181862357
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1181862356}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 59106789a66933e41921d8da7e3e68c7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SinglePlayerManager
+  playerPrefab: {fileID: 2589951504050571358, guid: 39df78f695721e444a693b647f34a6a8, type: 3}
+  animatorController: {fileID: 9100000, guid: 04b39a0eb7fa02b4db1e7831cb0416c7, type: 2}
+  spawnPoint: {fileID: 1699337395}
+  loadDelayTime: 0.5
+  showDebug: 1
+--- !u!4 &1181862358
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1181862356}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 164.43709, y: 0, z: -1230.3463}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1195512444
 GameObject:
   m_ObjectHideFlags: 0
@@ -7584,7 +7633,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1195512445
 RectTransform:
   m_ObjectHideFlags: 0
@@ -8630,7 +8679,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b02fb6012f75d7a4f9cec8719627f777, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameManager
-  loginSceneName: MenuSceneAdmin
+  loginSceneName: MenuSceneVisitor
   showDebug: 1
   disconnectTimeout: 3
   moveButtonGuide: {fileID: 1834271760}
@@ -10022,30 +10071,6 @@ MonoBehaviour:
       - m_Target: {fileID: 719259060}
         m_TargetAssemblyTypeName: ImageEditPopup, Assembly-CSharp
         m_MethodName: Hide
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
-      - m_Target: {fileID: 2036798982}
-        m_TargetAssemblyTypeName: UIButtonHandler, Assembly-CSharp
-        m_MethodName: ShowUI
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
-      - m_Target: {fileID: 570817453}
-        m_TargetAssemblyTypeName: UIButtonHandler, Assembly-CSharp
-        m_MethodName: ShowUI
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -11709,7 +11734,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1945030233
 RectTransform:
   m_ObjectHideFlags: 0
@@ -14750,7 +14775,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 14f215a7eb5160940bbfecca6941d1e0, type: 2}
+  - {fileID: 2100000, guid: c39f8a6b89939ac48bc2d1a6f854b337, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -21369,3 +21394,4 @@ SceneRoots:
   - {fileID: 1501714357}
   - {fileID: 773610683}
   - {fileID: 730800285}
+  - {fileID: 1181862358}

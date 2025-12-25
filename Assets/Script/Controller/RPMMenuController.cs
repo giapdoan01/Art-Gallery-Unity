@@ -40,7 +40,8 @@ public class RPMMenuController : MonoBehaviour
         
         // Đăng ký listeners cho các sự kiện từ view
         view.OnNameChanged += HandleNameChanged;
-        view.OnJoinButtonClicked += HandleJoinButtonClicked;
+        view.OnMultiPlayerButtonClicked += HandleMultiPlayerButtonClicked; // Đổi tên từ OnJoinButtonClicked
+        view.OnSinglePlayerButtonClicked += HandleSinglePlayerButtonClicked; // Thêm handler mới
         view.OnCreateAvatarButtonClicked += HandleCreateAvatarButtonClicked;
         
         // Đăng ký listeners cho các sự kiện từ model
@@ -119,7 +120,8 @@ public class RPMMenuController : MonoBehaviour
         }
     }
     
-    private void HandleJoinButtonClicked()
+    // Đổi tên từ HandleJoinButtonClicked
+    private void HandleMultiPlayerButtonClicked()
     {
         string playerName = view.GetPlayerName();
         
@@ -148,6 +150,34 @@ public class RPMMenuController : MonoBehaviour
             model.PlayerName,
             OnConnectionResult
         );
+    }
+    
+    // Phương thức mới xử lý chế độ single player
+    private void HandleSinglePlayerButtonClicked()
+    {
+        string playerName = view.GetPlayerName();
+        
+        string errorMessage;
+        if (!model.IsValidPlayerName(playerName, out errorMessage))
+        {
+            model.SetStatus(errorMessage);
+            return;
+        }
+
+        if (!model.IsAvatarLoaded)
+        {
+            model.SetStatus("Vui lòng chọn avatar trước!");
+            return;
+        }
+        
+        model.PlayerName = playerName;
+        model.SetStatus("Đang tải chế độ chơi đơn...");
+        
+        // Lưu dữ liệu người chơi
+        model.SavePlayerData();
+        
+        // Chuyển sang chế độ single player
+        NetworkManager.Instance.LoadSinglePlayerMode(model.PlayerName);
     }
     
     private void HandleCreateAvatarButtonClicked()
@@ -193,7 +223,11 @@ public class RPMMenuController : MonoBehaviour
         model.IsAvatarLoaded = true;
         isLoadingAvatar = false;
         model.SetJoinButtonState(true);
-        model.SetStatus("Avatar đã sẵn sàng! Nhấn tham gia để chơi.");
+        
+        // Kích hoạt cả hai nút khi avatar đã sẵn sàng
+        view.SetSinglePlayerButtonInteractable(true);
+        
+        model.SetStatus("Avatar đã sẵn sàng! Chọn chế độ chơi để bắt đầu.");
         
         // Lưu URL avatar hiện tại vào PlayerPrefs
         PlayerPrefs.SetString("AvatarURL", model.AvatarURL);
@@ -266,7 +300,8 @@ public class RPMMenuController : MonoBehaviour
         if (view != null)
         {
             view.OnNameChanged -= HandleNameChanged;
-            view.OnJoinButtonClicked -= HandleJoinButtonClicked;
+            view.OnMultiPlayerButtonClicked -= HandleMultiPlayerButtonClicked;
+            view.OnSinglePlayerButtonClicked -= HandleSinglePlayerButtonClicked;
             view.OnCreateAvatarButtonClicked -= HandleCreateAvatarButtonClicked;
         }
         

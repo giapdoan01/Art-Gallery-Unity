@@ -28,6 +28,22 @@ public class ImageActionResponse
     public string message;
 }
 
+[Serializable]
+public class FrameData
+{
+    public string id;
+    public int frameUse;
+    public string name;
+}
+
+[Serializable]
+public class FramesResponse
+{
+    public bool success;
+    public List<FrameData> data;
+    public string message;
+}
+
 /// <summary>
 /// APIManager - Singleton quản lý tất cả các API gọi đến server
 /// </summary>
@@ -91,7 +107,7 @@ public class APIManager : MonoBehaviour
     public void GetImageByFrame(int frameId, ImageResponseCallback callback)
     {
         string url = $"{adminUrl}/getimage/{frameId}";
-        StartCoroutine(GetRequest<ImageResponse>(url, (success, response, error) =>
+        StartCoroutine(GetRequest<ImageActionResponse>(url, (success, response, error) =>
         {
             if (success && response != null && response.success)
             {
@@ -121,6 +137,156 @@ public class APIManager : MonoBehaviour
                 callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
             }
         }));
+    }
+     /// <summary>
+    /// Lấy tất cả các frames - Endpoint: GET /api/frames
+    /// </summary>
+    public void GetAllFrames(Action<bool, List<FrameData>, string> callback)
+    {
+        string url = $"{apiUrl}/frames";
+        StartCoroutine(GetRequest<FramesResponse>(url, (success, response, error) =>
+        {
+            if (success && response != null && response.success)
+            {
+                callback?.Invoke(true, response.data, null);
+            }
+            else
+            {
+                callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
+            }
+        }));
+    }
+
+    #endregion
+
+    #region POST APIs
+
+    /// <summary>
+    /// Tạo mới ảnh (dùng cho frame mới) - Endpoint: POST /api/images
+    /// </summary>
+    public void CreateImage(
+        int frameId,
+        string name,
+        string author,
+        string description,
+        Vector3 position,
+        Vector3 rotation,
+        Texture2D imageTexture,
+        ImageResponseCallback callback)
+    {
+        string url = $"{apiUrl}/images";
+
+        WWWForm form = new WWWForm();
+        form.AddField("name", name);
+        form.AddField("frameUse", frameId.ToString());
+
+        if (!string.IsNullOrEmpty(author))
+            form.AddField("author", author);
+
+        if (!string.IsNullOrEmpty(description))
+            form.AddField("description", description);
+
+        // Gửi các trường position và rotation
+        form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("rotationX", rotation.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("rotationY", rotation.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        form.AddField("rotationZ", rotation.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        if (logDetailedData)
+        {
+            Debug.Log($"[APIManager] CreateImage - Frame ID: {frameId}, Name: {name}");
+            Debug.Log($"[APIManager] CreateImage - Position: ({position.x}, {position.y}, {position.z})");
+            Debug.Log($"[APIManager] CreateImage - Rotation: ({rotation.x}, {rotation.y}, {rotation.z})");
+        }
+
+        if (imageTexture != null)
+        {
+            byte[] imageBytes = imageTexture.EncodeToPNG();
+            form.AddBinaryData("image", imageBytes, "image.png", "image/png");
+        }
+        else
+        {
+            Debug.LogError("[APIManager] CreateImage - Không có ảnh để upload");
+            callback?.Invoke(false, null, "No image data");
+            return;
+        }
+
+        StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
+        {
+            if (success && response != null && response.success)
+                callback?.Invoke(true, response.data, null);
+            else
+                callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
+        }));
+    }
+
+    /// <summary>
+    /// Tạo mới ảnh từ đường dẫn file (dùng cho frame mới) - Endpoint: POST /api/images
+    /// </summary>
+    public void CreateImageFromPath(
+        int frameId,
+        string name,
+        string author, 
+        string description,
+        Vector3 position,
+        Vector3 rotation,
+        string localFilePath,
+        ImageResponseCallback callback)
+    {
+        if (!File.Exists(localFilePath))
+        {
+            callback?.Invoke(false, null, $"File not found: {localFilePath}");
+            return;
+        }
+
+        try
+        {
+            byte[] imageBytes = File.ReadAllBytes(localFilePath);
+            string mimeType = GetMimeTypeFromExtension(Path.GetExtension(localFilePath));
+            string fileName = Path.GetFileName(localFilePath);
+
+            string url = $"{apiUrl}/images";
+            WWWForm form = new WWWForm();
+            form.AddField("name", name);
+            form.AddField("frameUse", frameId.ToString());
+
+            if (!string.IsNullOrEmpty(author))
+                form.AddField("author", author);
+
+            if (!string.IsNullOrEmpty(description))
+                form.AddField("description", description);
+
+            // Gửi các trường position và rotation
+            form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("rotationX", rotation.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("rotationY", rotation.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("rotationZ", rotation.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            if (logDetailedData)
+            {
+                Debug.Log($"[APIManager] CreateImageFromPath - Frame ID: {frameId}, Name: {name}");
+                Debug.Log($"[APIManager] CreateImageFromPath - Position: ({position.x}, {position.y}, {position.z})");
+                Debug.Log($"[APIManager] CreateImageFromPath - Rotation: ({rotation.x}, {rotation.y}, {rotation.z})");
+            }
+
+            form.AddBinaryData("image", imageBytes, fileName, mimeType);
+
+            StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
+            {
+                if (success && response != null && response.success)
+                    callback?.Invoke(true, response.data, null);
+                else
+                    callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
+            }));
+        }
+        catch (Exception ex)
+        {
+            callback?.Invoke(false, null, $"Error reading file: {ex.Message}");
+        }
     }
 
     #endregion

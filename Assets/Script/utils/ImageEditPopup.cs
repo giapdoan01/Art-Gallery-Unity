@@ -37,6 +37,7 @@ public class ImageEditPopup : MonoBehaviour
     private PlayerController[] playerControllers;
     private System.Action onHideCallback;
     private ImageItem currentSelectedImageItem;
+    private bool isNewFrame = false;
 
     // ✅ Class để parse JSON từ JavaScript
     [System.Serializable]
@@ -120,7 +121,7 @@ public class ImageEditPopup : MonoBehaviour
     {
         currentImageData = imageData;
         selectedImagePath = null;
-        
+
         if (selectedImageTexture != null)
         {
             Destroy(selectedImageTexture);
@@ -128,6 +129,9 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         currentSelectedImageItem = sourceImageItem;
+
+        // Đánh dấu là frame mới nếu không có url
+        isNewFrame = string.IsNullOrEmpty(imageData.url);
 
         if (nameInput != null)
         {
@@ -137,12 +141,20 @@ public class ImageEditPopup : MonoBehaviour
         if (frameInput != null)
         {
             frameInput.text = imageData.frameUse.ToString();
+            frameInput.interactable = false; // Frame ID không thể thay đổi
         }
 
         if (imageFileInput != null)
         {
-            string fileName = GetFileNameFromUrl(imageData.url);
-            imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
+            if (isNewFrame)
+            {
+                imageFileInput.text = "Select an image file";
+            }
+            else
+            {
+                string fileName = GetFileNameFromUrl(imageData.url);
+                imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
+            }
         }
 
         if (authorInput != null)
@@ -155,7 +167,7 @@ public class ImageEditPopup : MonoBehaviour
             descriptionInput.text = imageData.description ?? "";
         }
 
-        UpdateStatus("Ready");
+        UpdateStatus(isNewFrame ? "Creating new frame" : "Ready");
 
         if (popupPanel != null)
         {
@@ -164,7 +176,7 @@ public class ImageEditPopup : MonoBehaviour
 
         DisablePlayerControllers();
 
-        if (showDebug) Debug.Log($"[ImageEditPopup] Showing popup for: {imageData.name}");
+        if (showDebug) Debug.Log($"[ImageEditPopup] Showing popup for: {imageData.name} (New frame: {isNewFrame})");
     }
 
     public void RegisterOnHideCallback(System.Action callback)
@@ -180,7 +192,7 @@ public class ImageEditPopup : MonoBehaviour
         }
 
         selectedImagePath = null;
-        
+
         if (selectedImageTexture != null)
         {
             Destroy(selectedImageTexture);
@@ -274,7 +286,7 @@ public class ImageEditPopup : MonoBehaviour
         if (!string.IsNullOrEmpty(path) && File.Exists(path))
         {
             selectedImagePath = path;
-            
+
             if (imageFileInput != null)
             {
                 imageFileInput.text = Path.GetFileName(path);
@@ -307,7 +319,7 @@ public class ImageEditPopup : MonoBehaviour
         {
             // Parse JSON
             WebGLFileData fileData = JsonUtility.FromJson<WebGLFileData>(jsonData);
-            
+
             if (fileData == null || string.IsNullOrEmpty(fileData.base64Data))
             {
                 UpdateStatus("Invalid file data");
@@ -316,7 +328,7 @@ public class ImageEditPopup : MonoBehaviour
 
             string fileName = fileData.fileName;
             int originalSize = fileData.fileSize;
-            
+
             if (showDebug) Debug.Log($"[ImageEditPopup] Processing: {fileName} ({originalSize / 1024}KB)");
 
             // Extract base64 string
@@ -347,7 +359,7 @@ public class ImageEditPopup : MonoBehaviour
 
             // Nén ảnh
             byte[] compressedBytes = resizedTexture.EncodeToJPG(75);
-            
+
             if (compressedBytes == null || compressedBytes.Length == 0)
             {
                 UpdateStatus("✗ Failed to compress");
@@ -363,7 +375,7 @@ public class ImageEditPopup : MonoBehaviour
                 {
                     Destroy(selectedImageTexture);
                 }
-                
+
                 selectedImageTexture = finalTexture;
                 selectedImagePath = fileName;
 
@@ -374,10 +386,10 @@ public class ImageEditPopup : MonoBehaviour
 
                 int finalSize = compressedBytes.Length;
                 float ratio = (float)finalSize / originalSize * 100;
-                
+
                 UpdateStatus($"✓ {fileName} ({finalSize / 1024}KB, {finalTexture.width}x{finalTexture.height}) - {ratio:F0}%");
-                
-                if (showDebug) 
+
+                if (showDebug)
                 {
                     Debug.Log($"[ImageEditPopup] Compressed: {originalSize / 1024}KB → {finalSize / 1024}KB");
                 }
@@ -387,7 +399,7 @@ public class ImageEditPopup : MonoBehaviour
                 UpdateStatus("✗ Failed to process");
                 Destroy(finalTexture);
             }
-            
+
             Destroy(resizedTexture);
         }
         catch (Exception ex)
@@ -448,63 +460,120 @@ public class ImageEditPopup : MonoBehaviour
             return;
         }
 
+        // Với frame mới, bắt buộc phải chọn ảnh
+        if (isNewFrame && string.IsNullOrEmpty(selectedImagePath))
+        {
+            UpdateStatus("Error: You must select an image file for new frame");
+            return;
+        }
+
         Vector3 position = Vector3.zero;
         Vector3 rotation = Vector3.zero;
 
+        // Tìm ArtFrame dựa trên frame ID
         ArtFrame targetFrame = FindArtFrameByFrameId(currentImageData.frameUse);
+
+        // Nếu không tìm thấy và đang tạo mới, tìm thử frame mới nhất đã được tạo
+        if (targetFrame == null && isNewFrame && ArtFrameCreator.Instance != null)
+        {
+            if (showDebug) Debug.Log($"[ImageEditPopup] Không tìm thấy frame với ID {currentImageData.frameUse}, tìm frame mới được tạo từ ArtFrameCreator");
+
+            // Thử lấy frame từ ArtFrameCreator
+            ArtFrame newFrame = ArtFrameCreator.Instance.GetLastCreatedFrame();
+
+            if (newFrame != null)
+            {
+                targetFrame = newFrame;
+                if (showDebug) Debug.Log($"[ImageEditPopup] Đã tìm thấy frame mới từ ArtFrameCreator: {targetFrame.name}");
+            }
+        }
+
+        // Nếu vẫn không tìm thấy, tìm kiếm tất cả các frame để xác định frame mới nhất
+        if (targetFrame == null)
+        {
+            ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+
+            if (showDebug) Debug.Log($"[ImageEditPopup] Tìm kiếm trong {allFrames.Length} frame trong scene");
+
+            foreach (ArtFrame frame in allFrames)
+            {
+                if (frame != null && frame.name.Contains("_New") || frame.name.Contains("ArtFrame_New"))
+                {
+                    targetFrame = frame;
+                    if (showDebug) Debug.Log($"[ImageEditPopup] Tìm thấy frame mới từ tên: {frame.name}");
+                    break;
+                }
+            }
+        }
 
         if (targetFrame != null)
         {
             position = targetFrame.transform.position;
             rotation = targetFrame.transform.eulerAngles;
+
+            if (showDebug) Debug.Log($"[ImageEditPopup] Sử dụng vị trí và góc quay của frame: " +
+                $"Vị trí: ({position.x}, {position.y}, {position.z}), " +
+                $"Góc quay: ({rotation.x}, {rotation.y}, {rotation.z})");
+        }
+        else
+        {
+            Debug.LogWarning($"[ImageEditPopup] Không tìm thấy frame với ID {currentImageData.frameUse}, sử dụng vị trí mặc định");
         }
 
         UpdateStatus("Saving...");
 
-        if (!string.IsNullOrEmpty(selectedImagePath))
+        // Frame mới sẽ dùng POST API, frame hiện có sẽ dùng PUT API
+        if (isNewFrame)
         {
+            if (showDebug) Debug.Log($"[ImageEditPopup] Creating new image for frame {currentImageData.frameUse}");
+
+            if (!string.IsNullOrEmpty(selectedImagePath))
+            {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (selectedImageTexture != null)
-            {
-                if (showDebug) Debug.Log("[ImageEditPopup] WebGL: Updating with Texture2D");
-                
-                // ✅ SỬA: Thêm delegate wrapper
-                APIManager.Instance.UpdateImageByFrame(
-                    currentImageData.frameUse,
-                    newName,
-                    author,
-                    description,
-                    position,
-                    rotation,
-                    selectedImageTexture,
-                    (success, data, error) => OnUpdateComplete(success, data, error)
-                );
-            }
-            else
-            {
-                UpdateStatus("Error: No texture loaded");
-            }
-#else
-            if (showDebug) Debug.Log($"[ImageEditPopup] Editor: Updating with path: {selectedImagePath}");
-            
-            // ✅ SỬA: Thêm delegate wrapper
-            APIManager.Instance.UpdateImageByFrameFromPath(
+        if (selectedImageTexture != null)
+        {
+            APIManager.Instance.CreateImage(
                 currentImageData.frameUse,
                 newName,
                 author,
                 description,
                 position,
                 rotation,
-                selectedImagePath,
+                selectedImageTexture,
                 (success, data, error) => OnUpdateComplete(success, data, error)
             );
-#endif
         }
         else
         {
-            if (showDebug) Debug.Log("[ImageEditPopup] Updating info only");
+            UpdateStatus("Error: No texture loaded");
+        }
+#else
+                APIManager.Instance.CreateImageFromPath(
+                    currentImageData.frameUse,
+                    newName,
+                    author,
+                    description,
+                    position,
+                    rotation,
+                    selectedImagePath,
+                    (success, data, error) => OnUpdateComplete(success, data, error)
+                );
+#endif
+            }
+            else
+            {
+                UpdateStatus("Error: You must select an image for new frame");
+            }
+        }
+        else // Cập nhật frame hiện có
+        {
+            if (showDebug) Debug.Log($"[ImageEditPopup] Updating existing image for frame {currentImageData.frameUse}");
 
-            // ✅ SỬA: Thêm delegate wrapper
+            if (!string.IsNullOrEmpty(selectedImagePath))
+            {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        if (selectedImageTexture != null)
+        {
             APIManager.Instance.UpdateImageByFrame(
                 currentImageData.frameUse,
                 newName,
@@ -512,9 +581,40 @@ public class ImageEditPopup : MonoBehaviour
                 description,
                 position,
                 rotation,
-                null,
+                selectedImageTexture,
                 (success, data, error) => OnUpdateComplete(success, data, error)
             );
+        }
+        else
+        {
+            UpdateStatus("Error: No texture loaded");
+        }
+#else
+                APIManager.Instance.UpdateImageByFrameFromPath(
+                    currentImageData.frameUse,
+                    newName,
+                    author,
+                    description,
+                    position,
+                    rotation,
+                    selectedImagePath,
+                    (success, data, error) => OnUpdateComplete(success, data, error)
+                );
+#endif
+            }
+            else // Chỉ update thông tin, không thay đổi ảnh
+            {
+                APIManager.Instance.UpdateImageByFrame(
+                    currentImageData.frameUse,
+                    newName,
+                    author,
+                    description,
+                    position,
+                    rotation,
+                    null,
+                    (success, data, error) => OnUpdateComplete(success, data, error)
+                );
+            }
         }
     }
 
@@ -542,6 +642,12 @@ public class ImageEditPopup : MonoBehaviour
                 }
 
                 RefreshAllArtFrames(updatedData.frameUse);
+
+                // Thông báo cho ArtFrameCreator rằng frame đã được lưu
+                if (isNewFrame && ArtFrameCreator.Instance != null)
+                {
+                    ArtFrameCreator.Instance.OnFrameSaved(updatedData.frameUse);
+                }
             }
 
             // ✅ SỬA: Unselect trước khi hide
@@ -556,6 +662,12 @@ public class ImageEditPopup : MonoBehaviour
         {
             UpdateStatus($"✗ Error: {error}");
             Debug.LogError($"[ImageEditPopup] Update failed: {error}");
+
+            // Nếu là frame mới và lưu thất bại, vẫn nên xóa frame
+            if (isNewFrame && ArtFrameCreator.Instance != null)
+            {
+                ArtFrameCreator.Instance.ClearLastCreatedFrame();
+            }
         }
     }
 

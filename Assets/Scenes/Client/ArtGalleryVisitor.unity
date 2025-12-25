@@ -2125,7 +2125,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &361344120
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4461,7 +4461,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &719259059
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4643,7 +4643,7 @@ GameObject:
   - component: {fileID: 730800285}
   - component: {fileID: 730800284}
   m_Layer: 0
-  m_Name: ArtPrefabManager
+  m_Name: "\u1EA2tPrefabManager"
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -7584,7 +7584,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1195512445
 RectTransform:
   m_ObjectHideFlags: 0
@@ -10031,30 +10031,6 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
-      - m_Target: {fileID: 2036798982}
-        m_TargetAssemblyTypeName: UIButtonHandler, Assembly-CSharp
-        m_MethodName: ShowUI
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
-      - m_Target: {fileID: 570817453}
-        m_TargetAssemblyTypeName: UIButtonHandler, Assembly-CSharp
-        m_MethodName: ShowUI
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
 --- !u!114 &1591507700
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11709,7 +11685,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1945030233
 RectTransform:
   m_ObjectHideFlags: 0
@@ -14750,7 +14726,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 14f215a7eb5160940bbfecca6941d1e0, type: 2}
+  - {fileID: 2100000, guid: c39f8a6b89939ac48bc2d1a6f854b337, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

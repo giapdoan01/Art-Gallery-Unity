@@ -7,7 +7,8 @@ public class RPMMenuView : MonoBehaviour
 {
     [Header("UI References")]
     [SerializeField] private TMP_InputField nameInput;
-    [SerializeField] private Button joinButton;
+    [SerializeField] private Button multiPlayerButton; // Đổi tên từ joinButton
+    [SerializeField] private Button singlePlayerButton; // Thêm nút Single Player
     [SerializeField] private Button createAvatarButton;
     [SerializeField] private TextMeshProUGUI statusText;
     
@@ -16,7 +17,8 @@ public class RPMMenuView : MonoBehaviour
 
     // Events để Controller xử lý
     public event Action<string> OnNameChanged;
-    public event Action OnJoinButtonClicked;
+    public event Action OnMultiPlayerButtonClicked; // Đổi tên từ OnJoinButtonClicked
+    public event Action OnSinglePlayerButtonClicked; // Thêm event mới
     public event Action OnCreateAvatarButtonClicked;
     public event Action OnUseDefaultButtonClicked;
 
@@ -26,8 +28,11 @@ public class RPMMenuView : MonoBehaviour
         if (nameInput != null)
             nameInput.onValueChanged.AddListener(OnNameInputChanged);
             
-        if (joinButton != null)
-            joinButton.onClick.AddListener(() => OnJoinButtonClicked?.Invoke());
+        if (multiPlayerButton != null)
+            multiPlayerButton.onClick.AddListener(() => OnMultiPlayerButtonClicked?.Invoke());
+            
+        if (singlePlayerButton != null)
+            singlePlayerButton.onClick.AddListener(() => OnSinglePlayerButtonClicked?.Invoke());
             
         if (createAvatarButton != null)
             createAvatarButton.onClick.AddListener(() => OnCreateAvatarButtonClicked?.Invoke());
@@ -59,9 +64,20 @@ public class RPMMenuView : MonoBehaviour
     
     public void SetJoinButtonInteractable(bool interactable)
     {
-        if (joinButton != null)
-            joinButton.interactable = interactable;
+        if (multiPlayerButton != null)
+            multiPlayerButton.interactable = interactable;
+            
+        // Đồng bộ trạng thái của nút singlePlayerButton với multiPlayerButton
+        if (singlePlayerButton != null)
+            singlePlayerButton.interactable = interactable;
     }
+    
+    public void SetSinglePlayerButtonInteractable(bool interactable)
+    {
+        if (singlePlayerButton != null)
+            singlePlayerButton.interactable = interactable;
+    }
+    
     public void PlaceAvatarInScene(GameObject avatar)
     {
         if (avatar != null)
@@ -109,8 +125,11 @@ public class RPMMenuView : MonoBehaviour
         if (nameInput != null)
             nameInput.onValueChanged.RemoveAllListeners();
             
-        if (joinButton != null)
-            joinButton.onClick.RemoveAllListeners();
+        if (multiPlayerButton != null)
+            multiPlayerButton.onClick.RemoveAllListeners();
+            
+        if (singlePlayerButton != null)
+            singlePlayerButton.onClick.RemoveAllListeners();
             
         if (createAvatarButton != null)
             createAvatarButton.onClick.RemoveAllListeners();

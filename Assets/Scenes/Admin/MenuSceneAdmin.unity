@@ -1069,7 +1069,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RPMMenuView
   nameInput: {fileID: 2003066297}
-  joinButton: {fileID: 1772864891}
+  multiPlayerButton: {fileID: 1772864891}
+  singlePlayerButton: {fileID: 0}
   createAvatarButton: {fileID: 315660194}
   statusText: {fileID: 107841602}
   avatarSpawnPoint: {fileID: 1645453833}
@@ -2301,6 +2302,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: gallerySceneName
+      value: ArtGalleryAdmin
+      objectReference: {fileID: 0}
+    - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
+      propertyPath: galleryMultiSceneName
       value: ArtGalleryAdmin
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}

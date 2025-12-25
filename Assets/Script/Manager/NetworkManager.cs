@@ -13,7 +13,8 @@ public class NetworkManager : MonoBehaviour
     [SerializeField] private string roomName = "gallery";
 
     [Header("Scene Settings")]
-    [SerializeField] private string gallerySceneName = "ArtGallery";
+    [SerializeField] private string galleryMultiSceneName = "ArtGallery";
+    [SerializeField] private string gallerySingleSceneName = "ArtGallerySingle";
     
     [Header("Sync Settings")]
     [SerializeField] private float networkUpdateRate = 0.1f;  // Cập nhật mỗi 0.1 giây
@@ -69,6 +70,21 @@ public class NetworkManager : MonoBehaviour
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
+    }
+
+    // Phương thức mới để vào chế độ single player mà không cần kết nối
+    public void LoadSinglePlayerMode(string playerName)
+    {
+        PlayerName = playerName;
+        
+        if (showDebug) Debug.Log($"Loading single player mode with name: {playerName}");
+        
+        // Lưu dữ liệu người chơi (nếu cần)
+        PlayerPrefs.SetString("PlayerName", PlayerName);
+        PlayerPrefs.Save();
+        
+        // Chuyển đến scene single player
+        SceneManager.LoadScene(gallerySingleSceneName);
     }
 
     public void ConnectAndJoinRoom(string playerName, Action<bool, string> callback)
@@ -135,7 +151,7 @@ public class NetworkManager : MonoBehaviour
         callback?.Invoke(true, "Connected successfully");
 
         yield return new WaitForSeconds(0.5f);
-        SceneManager.LoadScene(gallerySceneName);
+        SceneManager.LoadScene(galleryMultiSceneName);
     }
 
     private void SetupRoomListeners()
