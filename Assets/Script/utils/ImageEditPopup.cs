@@ -11,6 +11,11 @@ using TMPro;
 using UnityEditor;
 #endif
 
+/// <summary>
+/// ImageEditPopup - Popup để tạo mới hoặc chỉnh sửa thông tin ảnh
+/// Sử dụng APIManager để create/update image
+/// Sử dụng ArtManager để refresh cache sau khi update
+/// </summary>
 public class ImageEditPopup : MonoBehaviour
 {
     private static ImageEditPopup _instance;
@@ -26,20 +31,30 @@ public class ImageEditPopup : MonoBehaviour
     [SerializeField] private Button browseButton;
     [SerializeField] private Button saveButton;
     [SerializeField] private Button cancelButton;
+    [SerializeField] private Button deleteButton; // Optional
     [SerializeField] private TextMeshProUGUI statusText;
+    [SerializeField] private Image previewImage; // Optional: preview ảnh được chọn
+
+    [Header("Image Settings")]
+    [SerializeField] private int maxImageWidth = 2048;
+    [SerializeField] private int maxImageHeight = 2048;
+    [SerializeField] private int jpgQuality = 75;
 
     [Header("Debug")]
     [SerializeField] private bool showDebug = true;
 
+    // Data storage
     private ImageData currentImageData;
     private string selectedImagePath;
     private Texture2D selectedImageTexture;
-    private PlayerController[] playerControllers;
-    private System.Action onHideCallback;
     private ImageItem currentSelectedImageItem;
     private bool isNewFrame = false;
 
-    // ✅ Class để parse JSON từ JavaScript
+    // Player controller management
+    private PlayerController[] playerControllers;
+    private System.Action onHideCallback;
+
+    // WebGL file data structure
     [System.Serializable]
     public class WebGLFileData
     {
@@ -53,8 +68,11 @@ public class ImageEditPopup : MonoBehaviour
     private static extern void OpenFilePicker();
 #endif
 
+    #region Unity Lifecycle
+
     private void Awake()
     {
+        // Singleton pattern
         if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
@@ -64,32 +82,190 @@ public class ImageEditPopup : MonoBehaviour
         _instance = this;
         gameObject.name = "ImageEditPopup";
 
+        // Setup buttons
+        SetupButtons();
+
+        // Setup input fields
+        SetupInputFields();
+
+        // Hide initially
+        Hide();
+
+        if (showDebug)
+            Debug.Log("[ImageEditPopup] Initialized");
+    }
+
+    private void OnDestroy()
+    {
+        // Cleanup
+        RemoveButtonListeners();
+        CleanupTextures();
+        EnablePlayerControllers();
+        UnselectAllImageItems();
+    }
+
+    #endregion
+
+    #region Setup
+
+    private void SetupButtons()
+    {
         if (browseButton != null)
-        {
             browseButton.onClick.AddListener(OnBrowseClicked);
-        }
 
         if (saveButton != null)
-        {
             saveButton.onClick.AddListener(OnSaveClicked);
-        }
 
         if (cancelButton != null)
-        {
-            cancelButton.onClick.AddListener(Hide);
-        }
+            cancelButton.onClick.AddListener(OnCancelClicked);
 
+        if (deleteButton != null)
+            deleteButton.onClick.AddListener(OnDeleteClicked);
+    }
+
+    private void RemoveButtonListeners()
+    {
+        if (browseButton != null)
+            browseButton.onClick.RemoveListener(OnBrowseClicked);
+
+        if (saveButton != null)
+            saveButton.onClick.RemoveListener(OnSaveClicked);
+
+        if (cancelButton != null)
+            cancelButton.onClick.RemoveListener(OnCancelClicked);
+
+        if (deleteButton != null)
+            deleteButton.onClick.RemoveListener(OnDeleteClicked);
+    }
+
+    private void SetupInputFields()
+    {
+        // Frame input is read-only
         if (frameInput != null)
-        {
             frameInput.interactable = false;
+
+        // Image file input is read-only
+        if (imageFileInput != null)
+            imageFileInput.interactable = false;
+    }
+
+    #endregion
+
+    #region Public Methods
+
+    /// <summary>
+    /// Hiển thị popup với ImageData
+    /// </summary>
+    public void Show(ImageData imageData, ImageItem sourceImageItem = null)
+    {
+        if (imageData == null)
+        {
+            Debug.LogError("[ImageEditPopup] Cannot show: ImageData is null");
+            return;
         }
 
+        currentImageData = imageData;
+        currentSelectedImageItem = sourceImageItem;
+        selectedImagePath = null;
+        CleanupTextures();
+
+        // Determine if this is a new frame
+        isNewFrame = string.IsNullOrEmpty(imageData.url);
+
+        // Populate UI
+        PopulateUI();
+
+        // Show popup
+        if (popupPanel != null)
+            popupPanel.SetActive(true);
+
+        // Disable player controllers
+        DisablePlayerControllers();
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Showing for frame {imageData.frameUse} (New: {isNewFrame})");
+    }
+
+    /// <summary>
+    /// Ẩn popup
+    /// </summary>
+    public void Hide()
+    {
+        if (popupPanel != null)
+            popupPanel.SetActive(false);
+
+        // Cleanup
+        CleanupTextures();
+        selectedImagePath = null;
+
+        // Enable player controllers
+        EnablePlayerControllers();
+
+        // Unselect image items
+        UnselectAllImageItems();
+
+        // Call callback
+        onHideCallback?.Invoke();
+        onHideCallback = null;
+
+        if (showDebug)
+            Debug.Log("[ImageEditPopup] Hidden");
+    }
+
+    /// <summary>
+    /// Đăng ký callback khi popup đóng
+    /// </summary>
+    public void RegisterOnHideCallback(System.Action callback)
+    {
+        onHideCallback = callback;
+    }
+
+    #endregion
+
+    #region UI Population
+
+    private void PopulateUI()
+    {
+        // Name
+        if (nameInput != null)
+            nameInput.text = currentImageData.name ?? "";
+
+        // Frame ID (read-only)
+        if (frameInput != null)
+            frameInput.text = currentImageData.frameUse.ToString();
+
+        // Image file
         if (imageFileInput != null)
         {
-            imageFileInput.interactable = false;
+            if (isNewFrame)
+            {
+                imageFileInput.text = "Select an image file";
+            }
+            else
+            {
+                string fileName = GetFileNameFromUrl(currentImageData.url);
+                imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
+            }
         }
 
-        Hide();
+        // Author
+        if (authorInput != null)
+            authorInput.text = currentImageData.author ?? "";
+
+        // Description
+        if (descriptionInput != null)
+            descriptionInput.text = currentImageData.description ?? "";
+
+        // Delete button visibility
+        if (deleteButton != null)
+            deleteButton.gameObject.SetActive(!isNewFrame); // Chỉ hiện delete cho frame đã tồn tại
+
+        // Status
+        UpdateStatus(isNewFrame ? "Creating new frame" : "Ready to edit");
+
+        // Clear preview
+        if (previewImage != null)
+            previewImage.sprite = null;
     }
 
     private string GetFileNameFromUrl(string url)
@@ -103,111 +279,565 @@ public class ImageEditPopup : MonoBehaviour
             string fileName = parts[parts.Length - 1];
 
             if (fileName.Contains("?"))
-            {
                 fileName = fileName.Split('?')[0];
-            }
 
             fileName = Uri.UnescapeDataString(fileName);
             return fileName;
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[ImageEditPopup] Error extracting file name from URL: {ex.Message}");
+            Debug.LogError($"[ImageEditPopup] Error extracting filename: {ex.Message}");
             return Path.GetFileName(url);
         }
     }
 
-    public void Show(ImageData imageData, ImageItem sourceImageItem = null)
-    {
-        currentImageData = imageData;
-        selectedImagePath = null;
+    #endregion
 
+    #region Button Handlers
+
+    private void OnBrowseClicked()
+    {
+        if (showDebug)
+            Debug.Log("[ImageEditPopup] Browse clicked");
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        try
+        {
+            OpenFilePicker();
+            UpdateStatus("Opening file picker...");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ImageEditPopup] Error opening file picker: {ex.Message}");
+            UpdateStatus("Error: Could not open file picker");
+        }
+#elif UNITY_EDITOR
+        string path = EditorUtility.OpenFilePanel("Select Image", "", "png,jpg,jpeg");
+        if (!string.IsNullOrEmpty(path) && File.Exists(path))
+        {
+            LoadImageFromPath(path);
+        }
+        else
+        {
+            UpdateStatus("No file selected");
+        }
+#else
+        UpdateStatus("File browser not available on this platform");
+#endif
+    }
+
+    private void OnSaveClicked()
+    {
+        if (currentImageData == null)
+        {
+            UpdateStatus("Error: No image data");
+            return;
+        }
+
+        // Validate input
+        string newName = nameInput != null ? nameInput.text.Trim() : currentImageData.name;
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            UpdateStatus("Error: Name cannot be empty");
+            return;
+        }
+
+        // For new frames, image is required
+        if (isNewFrame && selectedImageTexture == null)
+        {
+            UpdateStatus("Error: You must select an image for new frame");
+            return;
+        }
+
+        // Get transform from ArtFrame
+        Vector3 position = Vector3.zero;
+        Vector3 rotation = Vector3.zero;
+        ArtFrame targetFrame = FindArtFrameByFrameId(currentImageData.frameUse);
+
+        if (targetFrame != null)
+        {
+            position = targetFrame.transform.position;
+            rotation = targetFrame.transform.eulerAngles;
+
+            if (showDebug)
+                Debug.Log($"[ImageEditPopup] Using transform from frame: Pos={position}, Rot={rotation}");
+        }
+        else
+        {
+            Debug.LogWarning($"[ImageEditPopup] Frame {currentImageData.frameUse} not found, using default transform");
+        }
+
+        // Prepare data
+        string author = authorInput != null ? authorInput.text.Trim() : "";
+        string description = descriptionInput != null ? descriptionInput.text.Trim() : "";
+
+        // Create ImageData object
+        ImageData dataToSend = new ImageData
+        {
+            frameUse = currentImageData.frameUse,
+            name = newName,
+            author = author,
+            description = description,
+            position = new Position { x = position.x, y = position.y, z = position.z },
+            rotation = new Rotation { x = rotation.x, y = rotation.y, z = rotation.z }
+        };
+
+        UpdateStatus("Saving...");
+
+        // Encode image to bytes if selected
+        byte[] imageBytes = null;
+        if (selectedImageTexture != null)
+        {
+            imageBytes = selectedImageTexture.EncodeToJPG(jpgQuality);
+        }
+
+        // Call appropriate API
+        if (isNewFrame)
+        {
+            if (showDebug)
+                Debug.Log($"[ImageEditPopup] Creating new image for frame {currentImageData.frameUse}");
+
+            APIManager.Instance.CreateImage(dataToSend, imageBytes, OnSaveComplete);
+        }
+        else
+        {
+            if (showDebug)
+                Debug.Log($"[ImageEditPopup] Updating image for frame {currentImageData.frameUse}");
+
+            APIManager.Instance.UpdateImage(dataToSend, imageBytes, OnSaveComplete);
+        }
+    }
+
+    private void OnCancelClicked()
+    {
+        if (showDebug)
+            Debug.Log("[ImageEditPopup] Cancel clicked");
+
+        // If new frame, notify ArtFrameCreator to clean up
+        if (isNewFrame && ArtFrameCreator.Instance != null)
+        {
+            ArtFrameCreator.Instance.ClearLastCreatedFrame();
+        }
+
+        Hide();
+    }
+
+    private void OnDeleteClicked()
+    {
+        if (currentImageData == null || isNewFrame)
+        {
+            UpdateStatus("Error: Cannot delete new frame");
+            return;
+        }
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Delete clicked for frame {currentImageData.frameUse}");
+
+        // Confirm deletion
+        if (!ConfirmDelete())
+            return;
+
+        UpdateStatus("Deleting...");
+
+        APIManager.Instance.DeleteImage(currentImageData.frameUse, OnDeleteComplete);
+    }
+
+    private bool ConfirmDelete()
+    {
+        // TODO: Show confirmation dialog
+        // For now, just return true
+        return true;
+    }
+
+    #endregion
+
+    #region WebGL File Handling
+
+    /// <summary>
+    /// Callback từ JavaScript khi file được chọn
+    /// </summary>
+    public void OnWebGLFileSelected(string jsonData)
+    {
+        if (showDebug)
+            Debug.Log("[ImageEditPopup] OnWebGLFileSelected called");
+
+        if (string.IsNullOrEmpty(jsonData))
+        {
+            UpdateStatus("No file selected");
+            return;
+        }
+
+        try
+        {
+            // Parse JSON
+            WebGLFileData fileData = JsonUtility.FromJson<WebGLFileData>(jsonData);
+
+            if (fileData == null || string.IsNullOrEmpty(fileData.base64Data))
+            {
+                UpdateStatus("Invalid file data");
+                return;
+            }
+
+            // Extract base64 string
+            int commaIndex = fileData.base64Data.IndexOf(',');
+            if (commaIndex < 0)
+            {
+                UpdateStatus("Invalid file format");
+                return;
+            }
+
+            string base64String = fileData.base64Data.Substring(commaIndex + 1);
+            byte[] fileBytes = Convert.FromBase64String(base64String);
+
+            // Load and process image
+            ProcessImageBytes(fileBytes, fileData.fileName, fileData.fileSize);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ImageEditPopup] Error processing file: {ex.Message}");
+            UpdateStatus($"Error: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region Image Processing
+
+    private void LoadImageFromPath(string path)
+    {
+        if (!File.Exists(path))
+        {
+            UpdateStatus("Error: File not found");
+            return;
+        }
+
+        try
+        {
+            byte[] fileBytes = File.ReadAllBytes(path);
+            string fileName = Path.GetFileName(path);
+            int fileSize = fileBytes.Length;
+
+            ProcessImageBytes(fileBytes, fileName, fileSize);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ImageEditPopup] Error loading image: {ex.Message}");
+            UpdateStatus($"Error: {ex.Message}");
+        }
+    }
+
+    private void ProcessImageBytes(byte[] fileBytes, string fileName, int originalSize)
+    {
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Processing: {fileName} ({originalSize / 1024}KB)");
+
+        // Load original texture
+        Texture2D originalTexture = new Texture2D(2, 2);
+        if (!originalTexture.LoadImage(fileBytes))
+        {
+            UpdateStatus("Error: Invalid image format");
+            Destroy(originalTexture);
+            return;
+        }
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Original: {originalTexture.width}x{originalTexture.height}");
+
+        // Resize if too large
+        Texture2D resizedTexture = ResizeTexture(originalTexture, maxImageWidth, maxImageHeight);
+        Destroy(originalTexture);
+
+        // Compress
+        byte[] compressedBytes = resizedTexture.EncodeToJPG(jpgQuality);
+
+        if (compressedBytes == null || compressedBytes.Length == 0)
+        {
+            UpdateStatus("Error: Failed to compress image");
+            Destroy(resizedTexture);
+            return;
+        }
+
+        // Load final texture
+        Texture2D finalTexture = new Texture2D(2, 2);
+        if (finalTexture.LoadImage(compressedBytes))
+        {
+            // Cleanup old texture
+            CleanupTextures();
+
+            // Store new texture
+            selectedImageTexture = finalTexture;
+            selectedImagePath = fileName;
+
+            // Update UI
+            if (imageFileInput != null)
+                imageFileInput.text = fileName;
+
+            // Update preview
+            if (previewImage != null)
+            {
+                Sprite sprite = Sprite.Create(
+                    finalTexture,
+                    new Rect(0, 0, finalTexture.width, finalTexture.height),
+                    new Vector2(0.5f, 0.5f)
+                );
+                previewImage.sprite = sprite;
+            }
+
+            // Update status
+            int finalSize = compressedBytes.Length;
+            float ratio = (float)finalSize / originalSize * 100;
+            UpdateStatus($"✓ {fileName} ({finalSize / 1024}KB, {finalTexture.width}x{finalTexture.height}) - {ratio:F0}%");
+
+            if (showDebug)
+                Debug.Log($"[ImageEditPopup] Compressed: {originalSize / 1024}KB → {finalSize / 1024}KB");
+        }
+        else
+        {
+            UpdateStatus("Error: Failed to process image");
+            Destroy(finalTexture);
+        }
+
+        Destroy(resizedTexture);
+    }
+
+    private Texture2D ResizeTexture(Texture2D source, int maxWidth, int maxHeight)
+    {
+        int width = source.width;
+        int height = source.height;
+
+        // Check if resize is needed
+        if (width <= maxWidth && height <= maxHeight)
+            return source;
+
+        // Calculate new dimensions
+        float ratio = Mathf.Min((float)maxWidth / width, (float)maxHeight / height);
+        int newWidth = Mathf.RoundToInt(width * ratio);
+        int newHeight = Mathf.RoundToInt(height * ratio);
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Resizing: {width}x{height} → {newWidth}x{newHeight}");
+
+        // Create render texture
+        RenderTexture rt = RenderTexture.GetTemporary(newWidth, newHeight);
+        rt.filterMode = FilterMode.Bilinear;
+
+        // Render to texture
+        RenderTexture.active = rt;
+        Graphics.Blit(source, rt);
+
+        // Read pixels
+        Texture2D result = new Texture2D(newWidth, newHeight, TextureFormat.RGB24, false);
+        result.ReadPixels(new Rect(0, 0, newWidth, newHeight), 0, 0);
+        result.Apply();
+
+        // Cleanup
+        RenderTexture.active = null;
+        RenderTexture.ReleaseTemporary(rt);
+
+        return result;
+    }
+
+    private void CleanupTextures()
+    {
         if (selectedImageTexture != null)
         {
             Destroy(selectedImageTexture);
             selectedImageTexture = null;
         }
 
-        currentSelectedImageItem = sourceImageItem;
-
-        // Đánh dấu là frame mới nếu không có url
-        isNewFrame = string.IsNullOrEmpty(imageData.url);
-
-        if (nameInput != null)
+        if (previewImage != null && previewImage.sprite != null)
         {
-            nameInput.text = imageData.name;
+            Destroy(previewImage.sprite);
+            previewImage.sprite = null;
         }
-
-        if (frameInput != null)
-        {
-            frameInput.text = imageData.frameUse.ToString();
-            frameInput.interactable = false; // Frame ID không thể thay đổi
-        }
-
-        if (imageFileInput != null)
-        {
-            if (isNewFrame)
-            {
-                imageFileInput.text = "Select an image file";
-            }
-            else
-            {
-                string fileName = GetFileNameFromUrl(imageData.url);
-                imageFileInput.text = string.IsNullOrEmpty(fileName) ? "Unknown file" : fileName;
-            }
-        }
-
-        if (authorInput != null)
-        {
-            authorInput.text = imageData.author ?? "";
-        }
-
-        if (descriptionInput != null)
-        {
-            descriptionInput.text = imageData.description ?? "";
-        }
-
-        UpdateStatus(isNewFrame ? "Creating new frame" : "Ready");
-
-        if (popupPanel != null)
-        {
-            popupPanel.SetActive(true);
-        }
-
-        DisablePlayerControllers();
-
-        if (showDebug) Debug.Log($"[ImageEditPopup] Showing popup for: {imageData.name} (New frame: {isNewFrame})");
     }
 
-    public void RegisterOnHideCallback(System.Action callback)
+    #endregion
+
+    #region API Callbacks
+
+    private void OnSaveComplete(bool success, string message)
     {
-        onHideCallback = callback;
+        if (success)
+        {
+            UpdateStatus("✓ Saved successfully!");
+
+            if (showDebug)
+                Debug.Log("[ImageEditPopup] Save successful");
+
+            // Refresh cache in ArtManager
+            if (ArtManager.Instance != null)
+            {
+                ArtManager.Instance.RefreshFrame(currentImageData.frameUse, (sprite, data) =>
+                {
+                    if (showDebug)
+                        Debug.Log($"[ImageEditPopup] Frame {currentImageData.frameUse} refreshed");
+                });
+            }
+
+            // Refresh gallery
+            var gallery = FindAnyObjectByType<ImageGalleryContainer>();
+            if (gallery != null)
+            {
+                gallery.RefreshGallery();
+            }
+
+            // Refresh all ArtFrames with this ID
+            RefreshAllArtFrames(currentImageData.frameUse);
+
+            // Notify ArtFrameCreator if new frame
+            if (isNewFrame && ArtFrameCreator.Instance != null)
+            {
+                ArtFrameCreator.Instance.OnFrameSaved(currentImageData.frameUse);
+            }
+
+            // Unselect image item
+            if (currentSelectedImageItem != null)
+            {
+                currentSelectedImageItem.SetSelected(false);
+            }
+
+            // Close popup after delay
+            Invoke(nameof(Hide), 1f);
+        }
+        else
+        {
+            UpdateStatus($"✗ Error: {message}");
+            Debug.LogError($"[ImageEditPopup] Save failed: {message}");
+
+            // If new frame failed, clean up
+            if (isNewFrame && ArtFrameCreator.Instance != null)
+            {
+                ArtFrameCreator.Instance.ClearLastCreatedFrame();
+            }
+        }
     }
 
-    public void Hide()
+    private void OnDeleteComplete(bool success, string message)
     {
-        if (popupPanel != null)
+        if (success)
         {
-            popupPanel.SetActive(false);
+            UpdateStatus("✓ Deleted successfully!");
+
+            if (showDebug)
+                Debug.Log("[ImageEditPopup] Delete successful");
+
+            // Clear cache
+            if (ArtManager.Instance != null)
+            {
+                ArtManager.Instance.ClearFrameCache(currentImageData.frameUse);
+            }
+
+            // Refresh gallery
+            var gallery = FindAnyObjectByType<ImageGalleryContainer>();
+            if (gallery != null)
+            {
+                gallery.RefreshGallery();
+            }
+
+            // Clear all ArtFrames with this ID
+            ClearAllArtFrames(currentImageData.frameUse);
+
+            // Close popup after delay
+            Invoke(nameof(Hide), 1f);
         }
-
-        selectedImagePath = null;
-
-        if (selectedImageTexture != null)
+        else
         {
-            Destroy(selectedImageTexture);
-            selectedImageTexture = null;
-        }
-
-        EnablePlayerControllers();
-        UnselectAllImageItems();
-
-        if (onHideCallback != null)
-        {
-            onHideCallback.Invoke();
-            onHideCallback = null;
+            UpdateStatus($"✗ Error: {message}");
+            Debug.LogError($"[ImageEditPopup] Delete failed: {message}");
         }
     }
+
+    #endregion
+
+    #region ArtFrame Management
+
+    private ArtFrame FindArtFrameByFrameId(int frameId)
+    {
+        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+        foreach (var frame in allFrames)
+        {
+            if (frame != null && frame.FrameId == frameId)
+                return frame;
+        }
+        return null;
+    }
+
+    private void RefreshAllArtFrames(int frameId)
+    {
+        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+        int count = 0;
+
+        foreach (ArtFrame frame in allFrames)
+        {
+            if (frame != null && frame.FrameId == frameId)
+            {
+                frame.ReloadArtwork(true);
+                count++;
+            }
+        }
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Refreshed {count} ArtFrame(s) with ID {frameId}");
+    }
+
+    private void ClearAllArtFrames(int frameId)
+    {
+        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+        int count = 0;
+
+        foreach (ArtFrame frame in allFrames)
+        {
+            if (frame != null && frame.FrameId == frameId)
+            {
+                frame.ClearArtwork();
+                count++;
+            }
+        }
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Cleared {count} ArtFrame(s) with ID {frameId}");
+    }
+
+    #endregion
+
+    #region Player Controller Management
+
+    private void DisablePlayerControllers()
+    {
+        playerControllers = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
+        foreach (var controller in playerControllers)
+        {
+            if (controller != null && controller.enabled)
+            {
+                controller.enabled = false;
+
+                if (showDebug)
+                    Debug.Log($"[ImageEditPopup] Disabled PlayerController: {controller.gameObject.name}");
+            }
+        }
+    }
+
+    private void EnablePlayerControllers()
+    {
+        if (playerControllers == null)
+            return;
+
+        foreach (var controller in playerControllers)
+        {
+            if (controller != null)
+            {
+                controller.enabled = true;
+
+                if (showDebug)
+                    Debug.Log($"[ImageEditPopup] Enabled PlayerController: {controller.gameObject.name}");
+            }
+        }
+    }
+
+    #endregion
+
+    #region Image Item Management
 
     private void UnselectAllImageItems()
     {
@@ -227,500 +857,18 @@ public class ImageEditPopup : MonoBehaviour
         }
     }
 
-    private ArtFrame FindArtFrameByFrameId(int frameId)
-    {
-        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
-        foreach (var f in allFrames)
-        {
-            if (f != null && f.FrameId == frameId)
-                return f;
-        }
-        return null;
-    }
+    #endregion
 
-    private void DisablePlayerControllers()
-    {
-        playerControllers = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
-        foreach (var controller in playerControllers)
-        {
-            if (controller != null && controller.enabled)
-            {
-                controller.enabled = false;
-                if (showDebug) Debug.Log("[ImageEditPopup] Disabled PlayerController: " + controller.gameObject.name);
-            }
-        }
-    }
-
-    private void EnablePlayerControllers()
-    {
-        if (playerControllers != null)
-        {
-            foreach (var controller in playerControllers)
-            {
-                if (controller != null)
-                {
-                    controller.enabled = true;
-                    if (showDebug) Debug.Log("[ImageEditPopup] Enabled PlayerController: " + controller.gameObject.name);
-                }
-            }
-        }
-    }
-
-    private void OnBrowseClicked()
-    {
-        if (showDebug) Debug.Log("[ImageEditPopup] Browse clicked");
-
-#if UNITY_WEBGL && !UNITY_EDITOR
-        try
-        {
-            OpenFilePicker();
-            UpdateStatus("Opening file picker...");
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[ImageEditPopup] Error calling OpenFilePicker: {ex.Message}");
-            UpdateStatus("Error: Could not open file picker");
-        }
-#elif UNITY_EDITOR
-        string path = EditorUtility.OpenFilePanel("Select Image", "", "png,jpg,jpeg");
-        if (!string.IsNullOrEmpty(path) && File.Exists(path))
-        {
-            selectedImagePath = path;
-
-            if (imageFileInput != null)
-            {
-                imageFileInput.text = Path.GetFileName(path);
-            }
-
-            UpdateStatus($"Selected: {Path.GetFileName(path)}");
-            if (showDebug) Debug.Log($"[ImageEditPopup] Selected file: {path}");
-        }
-        else
-        {
-            UpdateStatus("No file selected");
-        }
-#else
-        UpdateStatus("File browser not available on this platform");
-#endif
-    }
-
-    // ✅ Method nhận JSON từ JavaScript
-    public void OnWebGLFileSelected(string jsonData)
-    {
-        if (showDebug) Debug.Log("[ImageEditPopup] OnWebGLFileSelected called");
-
-        if (string.IsNullOrEmpty(jsonData))
-        {
-            UpdateStatus("No file selected");
-            return;
-        }
-
-        try
-        {
-            // Parse JSON
-            WebGLFileData fileData = JsonUtility.FromJson<WebGLFileData>(jsonData);
-
-            if (fileData == null || string.IsNullOrEmpty(fileData.base64Data))
-            {
-                UpdateStatus("Invalid file data");
-                return;
-            }
-
-            string fileName = fileData.fileName;
-            int originalSize = fileData.fileSize;
-
-            if (showDebug) Debug.Log($"[ImageEditPopup] Processing: {fileName} ({originalSize / 1024}KB)");
-
-            // Extract base64 string
-            int commaIndex = fileData.base64Data.IndexOf(',');
-            if (commaIndex < 0)
-            {
-                UpdateStatus("Invalid file format");
-                return;
-            }
-
-            string base64String = fileData.base64Data.Substring(commaIndex + 1);
-            byte[] fileBytes = Convert.FromBase64String(base64String);
-
-            // Load ảnh gốc
-            Texture2D originalTexture = new Texture2D(2, 2);
-            if (!originalTexture.LoadImage(fileBytes))
-            {
-                UpdateStatus("✗ Invalid image format");
-                Destroy(originalTexture);
-                return;
-            }
-
-            if (showDebug) Debug.Log($"[ImageEditPopup] Original: {originalTexture.width}x{originalTexture.height}");
-
-            // Resize nếu quá lớn
-            Texture2D resizedTexture = ResizeTexture(originalTexture, 2048, 2048);
-            Destroy(originalTexture);
-
-            // Nén ảnh
-            byte[] compressedBytes = resizedTexture.EncodeToJPG(75);
-
-            if (compressedBytes == null || compressedBytes.Length == 0)
-            {
-                UpdateStatus("✗ Failed to compress");
-                Destroy(resizedTexture);
-                return;
-            }
-
-            // Load lại
-            Texture2D finalTexture = new Texture2D(2, 2);
-            if (finalTexture.LoadImage(compressedBytes))
-            {
-                if (selectedImageTexture != null)
-                {
-                    Destroy(selectedImageTexture);
-                }
-
-                selectedImageTexture = finalTexture;
-                selectedImagePath = fileName;
-
-                if (imageFileInput != null)
-                {
-                    imageFileInput.text = fileName;
-                }
-
-                int finalSize = compressedBytes.Length;
-                float ratio = (float)finalSize / originalSize * 100;
-
-                UpdateStatus($"✓ {fileName} ({finalSize / 1024}KB, {finalTexture.width}x{finalTexture.height}) - {ratio:F0}%");
-
-                if (showDebug)
-                {
-                    Debug.Log($"[ImageEditPopup] Compressed: {originalSize / 1024}KB → {finalSize / 1024}KB");
-                }
-            }
-            else
-            {
-                UpdateStatus("✗ Failed to process");
-                Destroy(finalTexture);
-            }
-
-            Destroy(resizedTexture);
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[ImageEditPopup] Error: {ex.Message}");
-            UpdateStatus($"Error: {ex.Message}");
-        }
-    }
-
-    // ✅ Method resize texture
-    private Texture2D ResizeTexture(Texture2D source, int maxWidth, int maxHeight)
-    {
-        int width = source.width;
-        int height = source.height;
-
-        if (width <= maxWidth && height <= maxHeight)
-        {
-            return source;
-        }
-
-        float ratio = Mathf.Min((float)maxWidth / width, (float)maxHeight / height);
-        int newWidth = Mathf.RoundToInt(width * ratio);
-        int newHeight = Mathf.RoundToInt(height * ratio);
-
-        if (showDebug) Debug.Log($"[ImageEditPopup] Resizing: {width}x{height} → {newWidth}x{newHeight}");
-
-        RenderTexture rt = RenderTexture.GetTemporary(newWidth, newHeight);
-        rt.filterMode = FilterMode.Bilinear;
-
-        RenderTexture.active = rt;
-        Graphics.Blit(source, rt);
-
-        Texture2D result = new Texture2D(newWidth, newHeight, TextureFormat.RGB24, false);
-        result.ReadPixels(new Rect(0, 0, newWidth, newHeight), 0, 0);
-        result.Apply();
-
-        RenderTexture.active = null;
-        RenderTexture.ReleaseTemporary(rt);
-
-        return result;
-    }
-
-    private void OnSaveClicked()
-    {
-        if (currentImageData == null)
-        {
-            UpdateStatus("Error: No image data");
-            return;
-        }
-
-        string newName = nameInput != null ? nameInput.text.Trim() : currentImageData.name;
-        string author = authorInput != null ? authorInput.text.Trim() : "";
-        string description = descriptionInput != null ? descriptionInput.text.Trim() : "";
-
-        if (string.IsNullOrWhiteSpace(newName))
-        {
-            UpdateStatus("Error: Name cannot be empty");
-            return;
-        }
-
-        // Với frame mới, bắt buộc phải chọn ảnh
-        if (isNewFrame && string.IsNullOrEmpty(selectedImagePath))
-        {
-            UpdateStatus("Error: You must select an image file for new frame");
-            return;
-        }
-
-        Vector3 position = Vector3.zero;
-        Vector3 rotation = Vector3.zero;
-
-        // Tìm ArtFrame dựa trên frame ID
-        ArtFrame targetFrame = FindArtFrameByFrameId(currentImageData.frameUse);
-
-        // Nếu không tìm thấy và đang tạo mới, tìm thử frame mới nhất đã được tạo
-        if (targetFrame == null && isNewFrame && ArtFrameCreator.Instance != null)
-        {
-            if (showDebug) Debug.Log($"[ImageEditPopup] Không tìm thấy frame với ID {currentImageData.frameUse}, tìm frame mới được tạo từ ArtFrameCreator");
-
-            // Thử lấy frame từ ArtFrameCreator
-            ArtFrame newFrame = ArtFrameCreator.Instance.GetLastCreatedFrame();
-
-            if (newFrame != null)
-            {
-                targetFrame = newFrame;
-                if (showDebug) Debug.Log($"[ImageEditPopup] Đã tìm thấy frame mới từ ArtFrameCreator: {targetFrame.name}");
-            }
-        }
-
-        // Nếu vẫn không tìm thấy, tìm kiếm tất cả các frame để xác định frame mới nhất
-        if (targetFrame == null)
-        {
-            ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
-
-            if (showDebug) Debug.Log($"[ImageEditPopup] Tìm kiếm trong {allFrames.Length} frame trong scene");
-
-            foreach (ArtFrame frame in allFrames)
-            {
-                if (frame != null && frame.name.Contains("_New") || frame.name.Contains("ArtFrame_New"))
-                {
-                    targetFrame = frame;
-                    if (showDebug) Debug.Log($"[ImageEditPopup] Tìm thấy frame mới từ tên: {frame.name}");
-                    break;
-                }
-            }
-        }
-
-        if (targetFrame != null)
-        {
-            position = targetFrame.transform.position;
-            rotation = targetFrame.transform.eulerAngles;
-
-            if (showDebug) Debug.Log($"[ImageEditPopup] Sử dụng vị trí và góc quay của frame: " +
-                $"Vị trí: ({position.x}, {position.y}, {position.z}), " +
-                $"Góc quay: ({rotation.x}, {rotation.y}, {rotation.z})");
-        }
-        else
-        {
-            Debug.LogWarning($"[ImageEditPopup] Không tìm thấy frame với ID {currentImageData.frameUse}, sử dụng vị trí mặc định");
-        }
-
-        UpdateStatus("Saving...");
-
-        // Frame mới sẽ dùng POST API, frame hiện có sẽ dùng PUT API
-        if (isNewFrame)
-        {
-            if (showDebug) Debug.Log($"[ImageEditPopup] Creating new image for frame {currentImageData.frameUse}");
-
-            if (!string.IsNullOrEmpty(selectedImagePath))
-            {
-#if UNITY_WEBGL && !UNITY_EDITOR
-        if (selectedImageTexture != null)
-        {
-            APIManager.Instance.CreateImage(
-                currentImageData.frameUse,
-                newName,
-                author,
-                description,
-                position,
-                rotation,
-                selectedImageTexture,
-                (success, data, error) => OnUpdateComplete(success, data, error)
-            );
-        }
-        else
-        {
-            UpdateStatus("Error: No texture loaded");
-        }
-#else
-                APIManager.Instance.CreateImageFromPath(
-                    currentImageData.frameUse,
-                    newName,
-                    author,
-                    description,
-                    position,
-                    rotation,
-                    selectedImagePath,
-                    (success, data, error) => OnUpdateComplete(success, data, error)
-                );
-#endif
-            }
-            else
-            {
-                UpdateStatus("Error: You must select an image for new frame");
-            }
-        }
-        else // Cập nhật frame hiện có
-        {
-            if (showDebug) Debug.Log($"[ImageEditPopup] Updating existing image for frame {currentImageData.frameUse}");
-
-            if (!string.IsNullOrEmpty(selectedImagePath))
-            {
-#if UNITY_WEBGL && !UNITY_EDITOR
-        if (selectedImageTexture != null)
-        {
-            APIManager.Instance.UpdateImageByFrame(
-                currentImageData.frameUse,
-                newName,
-                author,
-                description,
-                position,
-                rotation,
-                selectedImageTexture,
-                (success, data, error) => OnUpdateComplete(success, data, error)
-            );
-        }
-        else
-        {
-            UpdateStatus("Error: No texture loaded");
-        }
-#else
-                APIManager.Instance.UpdateImageByFrameFromPath(
-                    currentImageData.frameUse,
-                    newName,
-                    author,
-                    description,
-                    position,
-                    rotation,
-                    selectedImagePath,
-                    (success, data, error) => OnUpdateComplete(success, data, error)
-                );
-#endif
-            }
-            else // Chỉ update thông tin, không thay đổi ảnh
-            {
-                APIManager.Instance.UpdateImageByFrame(
-                    currentImageData.frameUse,
-                    newName,
-                    author,
-                    description,
-                    position,
-                    rotation,
-                    null,
-                    (success, data, error) => OnUpdateComplete(success, data, error)
-                );
-            }
-        }
-    }
-
-    private void OnUpdateComplete(bool success, ImageData updatedData, string error)
-    {
-        if (success)
-        {
-            UpdateStatus("✓ Saved!");
-
-            if (showDebug) Debug.Log("[ImageEditPopup] Update successful");
-
-            var gallery = FindAnyObjectByType<ImageGalleryContainer>();
-            if (gallery != null)
-            {
-                if (showDebug) Debug.Log("[ImageEditPopup] Refreshing gallery");
-                gallery.RefreshGallery();
-            }
-
-            if (updatedData != null)
-            {
-                if (ArtManager.Instance != null)
-                {
-                    if (showDebug) Debug.Log($"[ImageEditPopup] Force refresh frame {updatedData.frameUse}");
-                    ArtManager.Instance.ForceRefreshFrame(updatedData.frameUse);
-                }
-
-                RefreshAllArtFrames(updatedData.frameUse);
-
-                // Thông báo cho ArtFrameCreator rằng frame đã được lưu
-                if (isNewFrame && ArtFrameCreator.Instance != null)
-                {
-                    ArtFrameCreator.Instance.OnFrameSaved(updatedData.frameUse);
-                }
-            }
-
-            // ✅ SỬA: Unselect trước khi hide
-            if (currentSelectedImageItem != null)
-            {
-                currentSelectedImageItem.SetSelected(false);
-            }
-
-            Invoke(nameof(Hide), 1f);
-        }
-        else
-        {
-            UpdateStatus($"✗ Error: {error}");
-            Debug.LogError($"[ImageEditPopup] Update failed: {error}");
-
-            // Nếu là frame mới và lưu thất bại, vẫn nên xóa frame
-            if (isNewFrame && ArtFrameCreator.Instance != null)
-            {
-                ArtFrameCreator.Instance.ClearLastCreatedFrame();
-            }
-        }
-    }
-
-    private void RefreshAllArtFrames(int frameId)
-    {
-        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
-        int count = 0;
-
-        foreach (ArtFrame frame in allFrames)
-        {
-            if (frame != null && frame.FrameId == frameId)
-            {
-                if (showDebug) Debug.Log($"[ImageEditPopup] Reloading ArtFrame {frame.name} với ID {frameId}");
-                frame.ReloadArtwork(true);
-                count++;
-            }
-        }
-
-        if (showDebug) Debug.Log($"[ImageEditPopup] Đã refresh {count} ArtFrame với ID {frameId}");
-    }
+    #region UI Updates
 
     private void UpdateStatus(string message)
     {
         if (statusText != null)
-        {
             statusText.text = message;
-        }
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Status: {message}");
     }
 
-    private void OnDestroy()
-    {
-        if (browseButton != null)
-        {
-            browseButton.onClick.RemoveListener(OnBrowseClicked);
-        }
-
-        if (saveButton != null)
-        {
-            saveButton.onClick.RemoveListener(OnSaveClicked);
-        }
-
-        if (cancelButton != null)
-        {
-            cancelButton.onClick.RemoveListener(Hide);
-        }
-
-        if (selectedImageTexture != null)
-        {
-            Destroy(selectedImageTexture);
-            selectedImageTexture = null;
-        }
-
-        EnablePlayerControllers();
-        UnselectAllImageItems();
-    }
+    #endregion
 }

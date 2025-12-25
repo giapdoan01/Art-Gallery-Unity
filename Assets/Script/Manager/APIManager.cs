@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
-using System.IO;
 using System.Text;
 
 /// <summary>
@@ -46,6 +45,7 @@ public class FramesResponse
 
 /// <summary>
 /// APIManager - Singleton quản lý tất cả các API gọi đến server
+/// CHỈ CHỊU TRÁCH NHIỆM: Gọi API và trả về response, KHÔNG cache, KHÔNG xử lý UI
 /// </summary>
 public class APIManager : MonoBehaviour
 {
@@ -55,21 +55,23 @@ public class APIManager : MonoBehaviour
     [SerializeField] private string baseUrl = "https://gallery-server-mutilplayer.onrender.com";
     [SerializeField] private string apiUrl = "https://gallery-server-mutilplayer.onrender.com/api";
     [SerializeField] private string adminUrl = "https://gallery-server-mutilplayer.onrender.com/admin";
-    [SerializeField] private float requestTimeout = 10f;
+    [SerializeField] private float requestTimeout = 30f; // Tăng timeout cho upload
     [SerializeField] private int maxRetries = 3;
     [SerializeField] private float retryDelay = 2f;
 
     [Header("Debug")]
     [SerializeField] private bool logRequests = true;
-    [SerializeField] private bool logResponses = false;
-    [SerializeField] private bool logDetailedData = true;  // Thêm flag để log chi tiết dữ liệu
+    [SerializeField] private bool logResponses = true;
+    [SerializeField] private bool logDetailedData = true;
 
     private int currentRequests = 0;
     private const int MAX_CONCURRENT_REQUESTS = 5;
 
+    // Delegates cho callbacks
     public delegate void ImageResponseCallback(bool success, ImageData image, string error);
     public delegate void ImagesResponseCallback(bool success, List<ImageData> images, string error);
     public delegate void ActionResponseCallback(bool success, string message);
+    public delegate void TextureResponseCallback(bool success, Texture2D texture, string error);
 
     public static APIManager Instance
     {
@@ -99,7 +101,7 @@ public class APIManager : MonoBehaviour
         if (logRequests) Debug.Log("[APIManager] Initialized");
     }
 
-    #region GET APIs
+    #region GET APIs - Image Data
 
     /// <summary>
     /// Lấy ảnh theo frame ID - Endpoint: GET /admin/getimage/:frame
@@ -138,7 +140,8 @@ public class APIManager : MonoBehaviour
             }
         }));
     }
-     /// <summary>
+
+    /// <summary>
     /// Lấy tất cả các frames - Endpoint: GET /api/frames
     /// </summary>
     public void GetAllFrames(Action<bool, List<FrameData>, string> callback)
@@ -159,34 +162,211 @@ public class APIManager : MonoBehaviour
 
     #endregion
 
-    #region POST APIs
+    #region GET APIs - Texture Download
 
     /// <summary>
-    /// Tạo mới ảnh (dùng cho frame mới) - Endpoint: POST /api/images
+    /// Tải texture từ URL - KHÔNG cache, chỉ tải và trả về
     /// </summary>
-    public void CreateImage(
-        int frameId,
-        string name,
-        string author,
-        string description,
-        Vector3 position,
-        Vector3 rotation,
-        Texture2D imageTexture,
-        ImageResponseCallback callback)
+    public void DownloadTexture(string url, TextureResponseCallback callback)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            callback?.Invoke(false, null, "URL is empty");
+            return;
+        }
+
+        StartCoroutine(DownloadTextureCoroutine(url, callback));
+    }
+
+    private IEnumerator DownloadTextureCoroutine(string url, TextureResponseCallback callback)
+    {
+        if (logRequests)
+            Debug.Log($"[APIManager] Downloading texture from: {url}");
+
+        using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(url))
+        {
+            request.timeout = (int)requestTimeout;
+
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                Texture2D texture = DownloadHandlerTexture.GetContent(request);
+
+                if (logResponses)
+                    Debug.Log($"[APIManager] Texture downloaded successfully: {texture.width}x{texture.height}");
+
+                callback?.Invoke(true, texture, null);
+            }
+            else
+            {
+                string error = $"Failed to download texture: {request.error}";
+                Debug.LogError($"[APIManager] {error}");
+                callback?.Invoke(false, null, error);
+            }
+        }
+    }
+
+    #endregion
+
+    #region POST APIs - Create Image
+
+    /// <summary>
+    /// ✅ Tạo ảnh mới - Endpoint: POST /api/images
+    /// </summary>
+    public void CreateImage(ImageData imageData, byte[] imageBytes, ActionResponseCallback callback)
     {
         string url = $"{apiUrl}/images";
 
+        if (logRequests)
+        {
+            Debug.Log($"[APIManager] Creating image:");
+            Debug.Log($"  URL: {url}");
+            Debug.Log($"  Frame: {imageData.frameUse}");
+            Debug.Log($"  Name: {imageData.name}");
+        }
+
+        StartCoroutine(UploadImageRequest(url, imageData, imageBytes, "POST", callback));
+    }
+
+    #endregion
+
+    #region PUT APIs - Update Image
+
+    /// <summary>
+    /// ✅ Cập nhật ảnh - Endpoint: PUT /api/images/frame/:frame
+    /// </summary>
+    public void UpdateImage(ImageData imageData, byte[] imageBytes, ActionResponseCallback callback)
+    {
+        string url = $"{apiUrl}/images/frame/{imageData.frameUse}";
+
+        if (logRequests)
+        {
+            Debug.Log($"[APIManager] Updating image:");
+            Debug.Log($"  URL: {url}");
+            Debug.Log($"  Frame: {imageData.frameUse}");
+            Debug.Log($"  Name: {imageData.name}");
+        }
+
+        StartCoroutine(UploadImageRequest(url, imageData, imageBytes, "PUT", callback));
+    }
+
+    /// <summary>
+    /// ✅ Upload image request - Unified cho cả POST và PUT
+    /// </summary>
+    private IEnumerator UploadImageRequest(string url, ImageData imageData, byte[] imageBytes, string method, ActionResponseCallback callback)
+    {
+        if (currentRequests >= MAX_CONCURRENT_REQUESTS)
+        {
+            yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
+        }
+
+        currentRequests++;
+
+        if (logRequests)
+            Debug.Log($"[APIManager] {method} Request: {url}");
+
         WWWForm form = new WWWForm();
-        form.AddField("name", name);
-        form.AddField("frameUse", frameId.ToString());
 
-        if (!string.IsNullOrEmpty(author))
-            form.AddField("author", author);
+        // Add image data fields
+        form.AddField("name", imageData.name ?? "");
+        form.AddField("frameUse", imageData.frameUse);
+        form.AddField("author", imageData.author ?? "");
+        form.AddField("description", imageData.description ?? "");
 
-        if (!string.IsNullOrEmpty(description))
-            form.AddField("description", description);
+        // Add position (sử dụng format positionX, positionY, positionZ)
+        if (imageData.position != null)
+        {
+            form.AddField("positionX", imageData.position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("positionY", imageData.position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("positionZ", imageData.position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        // Gửi các trường position và rotation
+            if (logDetailedData)
+                Debug.Log($"[APIManager] Position: ({imageData.position.x}, {imageData.position.y}, {imageData.position.z})");
+        }
+
+        // Add rotation (sử dụng format rotationX, rotationY, rotationZ)
+        if (imageData.rotation != null)
+        {
+            form.AddField("rotationX", imageData.rotation.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("rotationY", imageData.rotation.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            form.AddField("rotationZ", imageData.rotation.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            if (logDetailedData)
+                Debug.Log($"[APIManager] Rotation: ({imageData.rotation.x}, {imageData.rotation.y}, {imageData.rotation.z})");
+        }
+
+        // Add image file if provided
+        if (imageBytes != null && imageBytes.Length > 0)
+        {
+            form.AddBinaryData("image", imageBytes, "image.jpg", "image/jpeg");
+
+            if (logDetailedData)
+                Debug.Log($"[APIManager] Image size: {imageBytes.Length / 1024}KB");
+        }
+
+        using (UnityWebRequest request = UnityWebRequest.Post(url, form))
+        {
+            // Override method nếu là PUT
+            if (method == "PUT")
+            {
+                request.method = "PUT";
+            }
+
+            request.timeout = (int)requestTimeout;
+
+            yield return request.SendWebRequest();
+
+            currentRequests--;
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                if (logResponses)
+                    Debug.Log($"[APIManager] {method} successful: {request.downloadHandler.text}");
+
+                callback?.Invoke(true, "Image uploaded successfully");
+            }
+            else
+            {
+                string error = $"{method} failed: {request.error}";
+                Debug.LogError($"[APIManager] {error}");
+                Debug.LogError($"[APIManager] Response code: {request.responseCode}");
+                Debug.LogError($"[APIManager] Response: {request.downloadHandler.text}");
+
+                callback?.Invoke(false, error);
+            }
+        }
+    }
+
+    #endregion
+
+    #region PUT APIs - Update Transform
+
+    /// <summary>
+    /// ✅ Cập nhật transform - Endpoint: PUT /api/images/frame/:frame
+    /// Chỉ update position và rotation, KHÔNG update ảnh
+    /// </summary>
+    public void UpdateTransform(int frameId, Vector3 position, Vector3 rotation, ActionResponseCallback callback)
+    {
+        string url = $"{apiUrl}/images/frame/{frameId}";
+        StartCoroutine(UpdateTransformRequest(url, frameId, position, rotation, callback));
+    }
+
+    private IEnumerator UpdateTransformRequest(string url, int frameId, Vector3 position, Vector3 rotation, ActionResponseCallback callback)
+    {
+        if (currentRequests >= MAX_CONCURRENT_REQUESTS)
+        {
+            yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
+        }
+
+        currentRequests++;
+
+        if (logRequests)
+            Debug.Log($"[APIManager] Updating transform for frame {frameId}");
+
+        WWWForm form = new WWWForm();
+
+        // Chỉ gửi position và rotation (sử dụng format positionX, positionY, positionZ)
         form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
         form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
         form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -196,494 +376,150 @@ public class APIManager : MonoBehaviour
 
         if (logDetailedData)
         {
-            Debug.Log($"[APIManager] CreateImage - Frame ID: {frameId}, Name: {name}");
-            Debug.Log($"[APIManager] CreateImage - Position: ({position.x}, {position.y}, {position.z})");
-            Debug.Log($"[APIManager] CreateImage - Rotation: ({rotation.x}, {rotation.y}, {rotation.z})");
+            Debug.Log($"[APIManager] UpdateTransform - Frame: {frameId}");
+            Debug.Log($"[APIManager] UpdateTransform - Position: ({position.x}, {position.y}, {position.z})");
+            Debug.Log($"[APIManager] UpdateTransform - Rotation: ({rotation.x}, {rotation.y}, {rotation.z})");
         }
 
-        if (imageTexture != null)
+        using (UnityWebRequest request = UnityWebRequest.Post(url, form))
         {
-            byte[] imageBytes = imageTexture.EncodeToPNG();
-            form.AddBinaryData("image", imageBytes, "image.png", "image/png");
-        }
-        else
-        {
-            Debug.LogError("[APIManager] CreateImage - Không có ảnh để upload");
-            callback?.Invoke(false, null, "No image data");
-            return;
-        }
+            // Override method thành PUT
+            request.method = "PUT";
+            request.timeout = (int)requestTimeout;
 
-        StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
-        {
-            if (success && response != null && response.success)
-                callback?.Invoke(true, response.data, null);
-            else
-                callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-        }));
-    }
+            yield return request.SendWebRequest();
 
-    /// <summary>
-    /// Tạo mới ảnh từ đường dẫn file (dùng cho frame mới) - Endpoint: POST /api/images
-    /// </summary>
-    public void CreateImageFromPath(
-        int frameId,
-        string name,
-        string author, 
-        string description,
-        Vector3 position,
-        Vector3 rotation,
-        string localFilePath,
-        ImageResponseCallback callback)
-    {
-        if (!File.Exists(localFilePath))
-        {
-            callback?.Invoke(false, null, $"File not found: {localFilePath}");
-            return;
-        }
+            currentRequests--;
 
-        try
-        {
-            byte[] imageBytes = File.ReadAllBytes(localFilePath);
-            string mimeType = GetMimeTypeFromExtension(Path.GetExtension(localFilePath));
-            string fileName = Path.GetFileName(localFilePath);
-
-            string url = $"{apiUrl}/images";
-            WWWForm form = new WWWForm();
-            form.AddField("name", name);
-            form.AddField("frameUse", frameId.ToString());
-
-            if (!string.IsNullOrEmpty(author))
-                form.AddField("author", author);
-
-            if (!string.IsNullOrEmpty(description))
-                form.AddField("description", description);
-
-            // Gửi các trường position và rotation
-            form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("rotationX", rotation.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("rotationY", rotation.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("rotationZ", rotation.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-            if (logDetailedData)
+            if (request.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log($"[APIManager] CreateImageFromPath - Frame ID: {frameId}, Name: {name}");
-                Debug.Log($"[APIManager] CreateImageFromPath - Position: ({position.x}, {position.y}, {position.z})");
-                Debug.Log($"[APIManager] CreateImageFromPath - Rotation: ({rotation.x}, {rotation.y}, {rotation.z})");
+                if (logResponses)
+                    Debug.Log($"[APIManager] Transform updated successfully: {request.downloadHandler.text}");
+
+                callback?.Invoke(true, "Transform updated successfully");
             }
-
-            form.AddBinaryData("image", imageBytes, fileName, mimeType);
-
-            StartCoroutine(PostRequest<ImageActionResponse>(url, form, (success, response, error) =>
+            else
             {
-                if (success && response != null && response.success)
-                    callback?.Invoke(true, response.data, null);
-                else
-                    callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-            }));
-        }
-        catch (Exception ex)
-        {
-            callback?.Invoke(false, null, $"Error reading file: {ex.Message}");
+                string error = $"Transform update failed: {request.error}";
+                Debug.LogError($"[APIManager] {error}");
+                Debug.LogError($"[APIManager] Response code: {request.responseCode}");
+                Debug.LogError($"[APIManager] Response: {request.downloadHandler.text}");
+
+                callback?.Invoke(false, error);
+            }
         }
     }
 
     #endregion
-
-    #region PUT APIs
+    #region DELETE APIs
 
     /// <summary>
-    /// Cập nhật ảnh theo frame - Endpoint: PUT /api/images/frame/:frame
+    /// ✅ Xóa ảnh - Endpoint: DELETE /api/images/frame/:frame
     /// </summary>
-    public void UpdateImageByFrame(
-    int frameId,
-    string name,
-    string author,
-    string description,
-    Vector3 position,
-    Vector3 rotationEuler,
-    Texture2D imageTexture,
-    ImageResponseCallback callback)
+    public void DeleteImage(int frameId, ActionResponseCallback callback)
     {
         string url = $"{apiUrl}/images/frame/{frameId}";
-
-        WWWForm form = new WWWForm();
-        form.AddField("name", name);
-
-        if (!string.IsNullOrEmpty(author))
-            form.AddField("author", author);
-
-        if (!string.IsNullOrEmpty(description))
-            form.AddField("description", description);
-
-        // Gửi các trường positionX, positionY, positionZ riêng biệt theo đúng định dạng server mong đợi
-        form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-        // Gửi các trường rotationX, rotationY, rotationZ riêng biệt
-        form.AddField("rotationX", rotationEuler.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        form.AddField("rotationY", rotationEuler.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        form.AddField("rotationZ", rotationEuler.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-        if (logDetailedData)
-        {
-            Debug.Log($"[APIManager] UpdateImageByFrame - Position: ({position.x}, {position.y}, {position.z})");
-            Debug.Log($"[APIManager] UpdateImageByFrame - Rotation: ({rotationEuler.x}, {rotationEuler.y}, {rotationEuler.z})");
-        }
-
-        if (imageTexture != null)
-        {
-            byte[] imageBytes = imageTexture.EncodeToPNG();
-            form.AddBinaryData("image", imageBytes, "image.png", "image/png");
-        }
-
-        StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
-        {
-            if (success && response != null && response.success)
-                callback?.Invoke(true, response.data, null);
-            else
-                callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-        }));
+        StartCoroutine(DeleteRequest(url, callback));
     }
 
-    /// <summary>
-    /// Cập nhật ảnh theo frame từ đường dẫn file - Endpoint: PUT /api/images/frame/:frame
-    /// </summary>
-    public void UpdateImageByFrameFromPath(
-    int frameId,
-    string name,
-    string author,
-    string description,
-    Vector3 position,
-    Vector3 rotationEuler,
-    string localFilePath,
-    ImageResponseCallback callback)
+    private IEnumerator DeleteRequest(string url, ActionResponseCallback callback)
     {
-        if (!File.Exists(localFilePath))
+        if (logRequests)
+            Debug.Log($"[APIManager] Deleting image: {url}");
+
+        using (UnityWebRequest request = UnityWebRequest.Delete(url))
         {
-            callback?.Invoke(false, null, $"File not found: {localFilePath}");
-            return;
-        }
+            request.timeout = (int)requestTimeout;
 
-        try
-        {
-            byte[] imageBytes = File.ReadAllBytes(localFilePath);
-            string mimeType = GetMimeTypeFromExtension(Path.GetExtension(localFilePath));
-            string fileName = Path.GetFileName(localFilePath);
-
-            string url = $"{apiUrl}/images/frame/{frameId}";
-            WWWForm form = new WWWForm();
-            form.AddField("name", name);
-
-            if (!string.IsNullOrEmpty(author))
-                form.AddField("author", author);
-
-            if (!string.IsNullOrEmpty(description))
-                form.AddField("description", description);
-
-            // Gửi các trường positionX, positionY, positionZ riêng biệt theo đúng định dạng server mong đợi
-            form.AddField("positionX", position.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("positionY", position.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("positionZ", position.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-            // Gửi các trường rotationX, rotationY, rotationZ riêng biệt
-            form.AddField("rotationX", rotationEuler.x.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("rotationY", rotationEuler.y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            form.AddField("rotationZ", rotationEuler.z.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-            if (logDetailedData)
-            {
-                Debug.Log($"[APIManager] UpdateImageByFrameFromPath - Position: ({position.x}, {position.y}, {position.z})");
-                Debug.Log($"[APIManager] UpdateImageByFrameFromPath - Rotation: ({rotationEuler.x}, {rotationEuler.y}, {rotationEuler.z})");
-            }
-
-            form.AddBinaryData("image", imageBytes, fileName, mimeType);
-
-            StartCoroutine(PutRequest<ImageActionResponse>(url, form, (success, response, error) =>
-            {
-                if (success && response != null && response.success)
-                    callback?.Invoke(true, response.data, null);
-                else
-                    callback?.Invoke(false, null, error ?? response?.message ?? "Unknown error");
-            }));
-        }
-        catch (Exception ex)
-        {
-            callback?.Invoke(false, null, $"Error reading file: {ex.Message}");
-        }
-    }
-    #endregion
-
-    #region Helper Methods
-
-    /// <summary>
-    /// GET Request generic với retry
-    /// </summary>
-    private IEnumerator GetRequest<T>(string url, Action<bool, T, string> callback, int retryCount = 0) where T : class
-    {
-        if (currentRequests >= MAX_CONCURRENT_REQUESTS)
-        {
-            yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
-        }
-
-        currentRequests++;
-
-        if (logRequests) Debug.Log($"[APIManager] GET Request: {url}");
-
-        using (UnityWebRequest request = UnityWebRequest.Get(url))
-        {
-            request.timeout = Mathf.RoundToInt(requestTimeout);
-
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                if (retryCount < maxRetries)
-                {
-                    Debug.LogWarning($"[APIManager] Request failed: {request.error}. Retrying {retryCount + 1}/{maxRetries}...");
-                    currentRequests--;
-                    yield return new WaitForSeconds(retryDelay);
-                    yield return StartCoroutine(GetRequest<T>(url, callback, retryCount + 1));
-                    yield break;
-                }
-
-                Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
-                callback?.Invoke(false, null, request.error);
-                currentRequests--;
-                yield break;
-            }
-
-            string responseText = request.downloadHandler.text;
-
-            if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-
-            try
-            {
-                T response = JsonUtility.FromJson<T>(responseText);
-                callback?.Invoke(true, response, null);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
-                callback?.Invoke(false, null, $"Parsing error: {e.Message}");
-            }
-
-            currentRequests--;
-        }
-    }
-
-    /// <summary>
-    /// POST Request generic với retry
-    /// </summary>
-    private IEnumerator PostRequest<T>(string url, WWWForm form, Action<bool, T, string> callback, int retryCount = 0) where T : class
-    {
-        if (currentRequests >= MAX_CONCURRENT_REQUESTS)
-        {
-            yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
-        }
-
-        currentRequests++;
-
-        if (logRequests) Debug.Log($"[APIManager] POST Request: {url}");
-
-        using (UnityWebRequest request = UnityWebRequest.Post(url, form))
-        {
-            request.timeout = Mathf.RoundToInt(requestTimeout);
-
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                if (retryCount < maxRetries)
-                {
-                    Debug.LogWarning($"[APIManager] Request failed: {request.error}. Retrying {retryCount + 1}/{maxRetries}...");
-                    currentRequests--;
-                    yield return new WaitForSeconds(retryDelay);
-                    yield return StartCoroutine(PostRequest<T>(url, form, callback, retryCount + 1));
-                    yield break;
-                }
-
-                Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
-                callback?.Invoke(false, null, request.error);
-                currentRequests--;
-                yield break;
-            }
-
-            string responseText = request.downloadHandler.text;
-
-            if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-
-            try
-            {
-                T response = JsonUtility.FromJson<T>(responseText);
-                callback?.Invoke(true, response, null);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
-                callback?.Invoke(false, null, $"Parsing error: {e.Message}");
-            }
-
-            currentRequests--;
-        }
-    }
-
-    /// <summary>
-    /// PUT Request generic với retry
-    /// </summary>
-    private IEnumerator PutRequest<T>(string url, WWWForm form, Action<bool, T, string> callback, int retryCount = 0) where T : class
-    {
-        if (currentRequests >= MAX_CONCURRENT_REQUESTS)
-        {
-            yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
-        }
-
-        currentRequests++;
-
-        if (logRequests) Debug.Log($"[APIManager] PUT Request: {url}");
-
-        using (UnityWebRequest request = UnityWebRequest.Post(url, form))
-        {
-            request.method = "PUT";
-            request.timeout = Mathf.RoundToInt(requestTimeout);
-
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                if (retryCount < maxRetries)
-                {
-                    Debug.LogWarning($"[APIManager] Request failed: {request.error}. Retrying {retryCount + 1}/{maxRetries}...");
-                    currentRequests--;
-                    yield return new WaitForSeconds(retryDelay);
-                    yield return StartCoroutine(PutRequest<T>(url, form, callback, retryCount + 1));
-                    yield break;
-                }
-
-                Debug.LogError($"[APIManager] Request failed after {maxRetries} retries: {request.error}");
-                callback?.Invoke(false, null, request.error);
-                currentRequests--;
-                yield break;
-            }
-
-            string responseText = request.downloadHandler.text;
-
-            if (logResponses) Debug.Log($"[APIManager] Response: {responseText}");
-
-            try
-            {
-                T response = JsonUtility.FromJson<T>(responseText);
-                callback?.Invoke(true, response, null);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[APIManager] Failed to parse response: {e.Message}");
-                callback?.Invoke(false, null, $"Parsing error: {e.Message}");
-            }
-
-            currentRequests--;
-        }
-    }
-
-    /// <summary>
-    /// Lấy MIME type từ extension của file
-    /// </summary>
-    private string GetMimeTypeFromExtension(string extension)
-    {
-        extension = extension.ToLower().TrimStart('.');
-
-        switch (extension)
-        {
-            case "jpg":
-            case "jpeg":
-                return "image/jpeg";
-            case "png":
-                return "image/png";
-            case "gif":
-                return "image/gif";
-            case "bmp":
-                return "image/bmp";
-            case "webp":
-                return "image/webp";
-            default:
-                return "application/octet-stream";
-        }
-    }
-
-    #endregion
-
-    #region Utils
-
-    /// <summary>
-    /// Phương thức trợ giúp tải Texture2D từ URL
-    /// </summary>
-    public void LoadTextureFromUrl(string url, Action<Texture2D> callback)
-    {
-        StartCoroutine(DownloadTexture(url, callback));
-    }
-
-    private IEnumerator DownloadTexture(string url, Action<Texture2D> callback)
-    {
-        using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(url))
-        {
             yield return request.SendWebRequest();
 
             if (request.result == UnityWebRequest.Result.Success)
             {
-                Texture2D texture = DownloadHandlerTexture.GetContent(request);
-                callback?.Invoke(texture);
-            }
-            else
-            {
-                Debug.LogError($"[APIManager] Failed to download texture: {request.error}");
-                callback?.Invoke(null);
-            }
-        }
-    }
+                if (logResponses)
+                    Debug.Log($"[APIManager] Delete successful");
 
-    /// <summary>
-    /// Chuyển đổi ảnh từ đường dẫn thành Texture2D
-    /// </summary>
-    public Texture2D LoadTextureFromPath(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                byte[] data = File.ReadAllBytes(path);
-                Texture2D texture = new Texture2D(2, 2);
-                texture.LoadImage(data);
-                return texture;
+                callback?.Invoke(true, "Image deleted successfully");
             }
             else
             {
-                Debug.LogError($"[APIManager] File not found: {path}");
-                return null;
+                string error = $"Delete failed: {request.error}";
+                Debug.LogError($"[APIManager] {error}");
+                callback?.Invoke(false, error);
             }
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[APIManager] Error loading texture: {ex.Message}");
-            return null;
         }
     }
 
     #endregion
 
-    // Public getter cho các URL
-    public string BaseURL => baseUrl;
-    public string ApiURL => apiUrl;
-    public string AdminURL => adminUrl;
+    #region Generic Request Handlers
 
-    // Setter để có thể thay đổi URLs trong runtime nếu cần
-    public void SetURLs(string newBaseUrl)
+    private IEnumerator GetRequest<T>(string url, Action<bool, T, string> callback) where T : class
     {
-        baseUrl = newBaseUrl;
-        apiUrl = $"{newBaseUrl}/api";
-        adminUrl = $"{newBaseUrl}/admin";
+        if (currentRequests >= MAX_CONCURRENT_REQUESTS)
+        {
+            yield return new WaitUntil(() => currentRequests < MAX_CONCURRENT_REQUESTS);
+        }
 
-        if (logRequests) Debug.Log($"[APIManager] URLs updated. Base: {baseUrl}");
+        currentRequests++;
+
+        if (logRequests)
+            Debug.Log($"[APIManager] GET Request: {url}");
+
+        using (UnityWebRequest request = UnityWebRequest.Get(url))
+        {
+            request.timeout = (int)requestTimeout;
+
+            yield return request.SendWebRequest();
+
+            currentRequests--;
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                try
+                {
+                    string jsonResponse = request.downloadHandler.text;
+
+                    if (logResponses)
+                        Debug.Log($"[APIManager] Response: {jsonResponse}");
+
+                    T response = JsonUtility.FromJson<T>(jsonResponse);
+                    callback?.Invoke(true, response, null);
+                }
+                catch (Exception ex)
+                {
+                    string error = $"JSON Parse Error: {ex.Message}";
+                    Debug.LogError($"[APIManager] {error}");
+                    callback?.Invoke(false, null, error);
+                }
+            }
+            else
+            {
+                string error = $"Request failed: {request.error}";
+                Debug.LogError($"[APIManager] {error}");
+                callback?.Invoke(false, null, error);
+            }
+        }
     }
+
+    #endregion
+
+    #region Utility Methods
+
+    /// <summary>
+    /// Kiểm tra xem có đang có request nào đang chạy không
+    /// </summary>
+    public bool HasActiveRequests()
+    {
+        return currentRequests > 0;
+    }
+
+    /// <summary>
+    /// Lấy số lượng request đang chạy
+    /// </summary>
+    public int GetActiveRequestCount()
+    {
+        return currentRequests;
+    }
+
+    #endregion
 }

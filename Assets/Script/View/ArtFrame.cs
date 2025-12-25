@@ -4,6 +4,11 @@ using System.Collections;
 using UnityEngine.EventSystems;
 using System.Collections.Generic;
 
+/// <summary>
+/// ArtFrame - Component đại diện cho một khung tranh trong scene
+/// Sử dụng ArtManager để load và cache ảnh
+/// Sử dụng APIManager để lấy metadata và update transform
+/// </summary>
 [RequireComponent(typeof(MeshRenderer))]
 public class ArtFrame : MonoBehaviour
 {
@@ -41,7 +46,8 @@ public class ArtFrame : MonoBehaviour
     [SerializeField] private bool showDebug = false;
 
     // Private variables
-    private ArtFrameData frameData;
+    private ImageData currentImageData;
+    private Sprite currentSprite;
     private Material currentMaterial;
     private bool isSubscribed = false;
     private float lastSyncTime = 0f;
@@ -49,19 +55,22 @@ public class ArtFrame : MonoBehaviour
     private Quaternion lastRotation;
     private Vector3 lastScale;
     private Camera mainCamera;
+    private bool isLoading = false;
 
     // Properties
     public int FrameId => frameId;
     public string FrameName => frameName;
-    public ArtFrameData FrameData => frameData;
-    public bool IsLoaded => frameData != null && frameData.IsLoaded();
-    public bool IsLoading => ArtManager.Instance != null && ArtManager.Instance.IsImageLoading(frameId);
+    public ImageData ImageData => currentImageData;
+    public Sprite CurrentSprite => currentSprite;
+    public bool IsLoaded => currentSprite != null && currentImageData != null;
+    public bool IsLoading => isLoading || (ArtManager.Instance != null && ArtManager.Instance.IsImageLoading(frameId));
     public GameObject ButtonContainer => buttonContainer;
 
     #region Unity Lifecycle
 
     private void Awake()
     {
+        // Auto-assign references
         if (quadRenderer == null)
         {
             quadRenderer = GetComponent<MeshRenderer>();
@@ -77,63 +86,49 @@ public class ArtFrame : MonoBehaviour
         lastRotation = transform.rotation;
         lastScale = transform.localScale;
 
-        // Ẩn container nút ban đầu
+        // Ẩn button container ban đầu
         if (buttonContainer != null)
         {
             buttonContainer.SetActive(false);
         }
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Awake: Frame {frameId} initialized", this);
     }
 
     private void Start()
     {
+        // Subscribe to ArtManager events
         SubscribeToManager();
 
+        // Setup button events
+        SetupButtonEvents();
+
+        // Get main camera reference
+        mainCamera = Camera.main;
+
+        // Setup canvas sorting order
+        SetupCanvasSorting();
+
+        // Load artwork if enabled
         if (loadOnStart)
         {
             LoadArtwork();
         }
 
-        // Thiết lập sự kiện click cho các nút
-        SetupButtonEvents();
-
-        // Lấy tham chiếu đến camera
-        mainCamera = Camera.main;
-
-        // Đặt canvas sorting order cao hơn
-        if (buttonContainer != null)
-        {
-            Canvas canvas = buttonContainer.GetComponent<Canvas>();
-            if (canvas != null)
-            {
-                canvas.sortingOrder = 100;
-            }
-        }
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Start: Frame {frameId} ready", this);
     }
 
     private void Update()
     {
-        // Kiểm tra và đồng bộ transform lên server nếu đã thay đổi
+        // Auto save transform if enabled
         if (autoSaveTransform && Time.time - lastSyncTime >= autoSaveDelay)
         {
-            bool hasChanges = false;
-
-            if (syncPosition && Vector3.Distance(lastPosition, transform.position) > 0.01f)
-                hasChanges = true;
-
-            if (syncRotation && Quaternion.Angle(lastRotation, transform.rotation) > 0.1f)
-                hasChanges = true;
-
-            if (syncScale && Vector3.Distance(lastScale, transform.localScale) > 0.01f)
-                hasChanges = true;
-
-            if (hasChanges)
-            {
-                SaveTransformToServer();
-                lastSyncTime = Time.time;
-            }
+            CheckAndSaveTransform();
         }
 
-        // ✅ Kiểm tra khoảng cách để hiển thị/ẩn buttons
+        // Check button visibility based on distance
         CheckButtonVisibility();
     }
 
@@ -150,23 +145,7 @@ public class ArtFrame : MonoBehaviour
     private void OnDestroy()
     {
         UnsubscribeFromManager();
-
-        if (currentMaterial != null)
-        {
-            Destroy(currentMaterial);
-            currentMaterial = null;
-        }
-
-        // Remove button listeners
-        if (infoButton != null)
-        {
-            infoButton.onClick.RemoveAllListeners();
-        }
-
-        if (transformButton != null)
-        {
-            transformButton.onClick.RemoveAllListeners();
-        }
+        CleanupResources();
     }
 
     private void OnValidate()
@@ -193,156 +172,207 @@ public class ArtFrame : MonoBehaviour
 
     private void SubscribeToManager()
     {
-        if (!isSubscribed && ArtManager.Instance != null)
-        {
-            ArtManager.Instance.OnImageUpdated += OnImageUpdatedFromManager;
-            ArtManager.Instance.OnImageLoadError += OnImageLoadErrorFromManager;
-            isSubscribed = true;
-        }
+        if (isSubscribed || ArtManager.Instance == null)
+            return;
+
+        ArtManager.Instance.OnImageLoaded += OnImageLoadedFromManager;
+        ArtManager.Instance.OnImageLoadFailed += OnImageLoadFailedFromManager;
+        isSubscribed = true;
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Subscribed to ArtManager events", this);
     }
 
     private void UnsubscribeFromManager()
     {
-        if (isSubscribed && ArtManager.Instance != null)
+        if (!isSubscribed || ArtManager.Instance == null)
+            return;
+
+        ArtManager.Instance.OnImageLoaded -= OnImageLoadedFromManager;
+        ArtManager.Instance.OnImageLoadFailed -= OnImageLoadFailedFromManager;
+        isSubscribed = false;
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Unsubscribed from ArtManager events", this);
+    }
+
+    private void OnImageLoadedFromManager(int loadedFrameId, Sprite sprite, ImageData data)
+    {
+        if (loadedFrameId != frameId)
+            return;
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Image loaded from manager: Frame {frameId}", this);
+
+        currentSprite = sprite;
+        currentImageData = data;
+        isLoading = false;
+
+        ApplyArtwork(sprite);
+
+        if (autoResize && sprite != null && sprite.texture != null)
         {
-            ArtManager.Instance.OnImageUpdated -= OnImageUpdatedFromManager;
-            ArtManager.Instance.OnImageLoadError -= OnImageLoadErrorFromManager;
-            isSubscribed = false;
+            ResizeFrameByImageRatio(sprite.texture);
+        }
+
+        // Sync transform from server if enabled
+        if (syncTransformFromServer && data != null)
+        {
+            ApplyTransformFromImageData(data);
         }
     }
 
-    private void OnImageUpdatedFromManager(int updatedFrameId, Sprite newSprite)
+    private void OnImageLoadFailedFromManager(int errorFrameId, string errorMessage)
     {
-        if (updatedFrameId == frameId && newSprite != null)
-        {
-            if (showDebug) Debug.Log($"[ArtFrame] Auto update frame {frameId}", this);
+        if (errorFrameId != frameId)
+            return;
 
-            if (frameData == null)
-            {
-                frameData = new ArtFrameData(frameId, frameName);
-            }
-            frameData.sprite = newSprite;
+        isLoading = false;
 
-            ApplyArtwork(newSprite);
-
-            if (autoResize && newSprite.texture != null)
-            {
-                ResizeFrameByImageRatio(newSprite.texture);
-            }
-
-            // Khi có cập nhật ảnh từ server, kiểm tra xem có nên cập nhật transform không
-            if (syncTransformFromServer)
-            {
-                SyncTransformFromServer();
-            }
-        }
-    }
-
-    private void OnImageLoadErrorFromManager(int errorFrameId, string errorMessage)
-    {
-        if (errorFrameId == frameId)
-        {
-            Debug.LogError($"[ArtFrame] Error frame {frameId}: {errorMessage}", this);
-        }
+        Debug.LogError($"[ArtFrame] Failed to load image for frame {frameId}: {errorMessage}", this);
     }
 
     #endregion
 
     #region Load Artwork
 
+    /// <summary>
+    /// Load artwork từ ArtManager (có cache)
+    /// </summary>
     public void LoadArtwork(bool forceRefresh = false)
     {
         if (frameId <= 0)
         {
-            Debug.LogError($"[ArtFrame] Frame ID không hợp lệ: {frameId}", this);
+            Debug.LogError($"[ArtFrame] Invalid frame ID: {frameId}", this);
             return;
         }
 
-        ShowLoadingTexture();
-        ArtManager.Instance.GetImageForFrame(frameId, OnArtworkLoaded, forceRefresh);
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Loading artwork for frame {frameId} (forceRefresh: {forceRefresh})", this);
 
-        // Đồng bộ transform từ server nếu đã bật
-        if (syncTransformFromServer)
+        isLoading = true;
+        ShowLoadingTexture();
+
+        if (forceRefresh)
         {
-            SyncTransformFromServer();
+            // Force refresh - clear cache và reload
+            ArtManager.Instance.RefreshFrame(frameId, OnArtworkLoaded);
+        }
+        else
+        {
+            // Normal load - sử dụng cache nếu có
+            ArtManager.Instance.LoadImage(frameId, OnArtworkLoaded);
         }
     }
 
-    private void OnArtworkLoaded(Sprite sprite)
+    /// <summary>
+    /// Callback khi artwork load xong
+    /// </summary>
+    private void OnArtworkLoaded(Sprite sprite, ImageData data)
     {
+        isLoading = false;
+
         if (sprite == null)
         {
-            Debug.LogError($"[ArtFrame] Không thể tải ảnh cho frame {frameId}", this);
+            Debug.LogWarning($"[ArtFrame] No sprite loaded for frame {frameId}", this);
             return;
         }
 
-        if (frameData == null)
-        {
-            frameData = new ArtFrameData(frameId, frameName);
-        }
+        currentSprite = sprite;
+        currentImageData = data;
 
-        frameData.sprite = sprite;
         ApplyArtwork(sprite);
 
         if (autoResize && sprite.texture != null)
         {
             ResizeFrameByImageRatio(sprite.texture);
         }
+
+        // Apply transform from server data
+        if (syncTransformFromServer && data != null)
+        {
+            ApplyTransformFromImageData(data);
+        }
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Artwork loaded successfully for frame {frameId}", this);
     }
 
+    /// <summary>
+    /// Apply sprite lên material
+    /// </summary>
     private void ApplyArtwork(Sprite sprite)
     {
-        if (sprite == null) return;
+        if (sprite == null || quadRenderer == null)
+            return;
 
+        // Cleanup old material
         if (currentMaterial != null)
         {
             Destroy(currentMaterial);
         }
 
+        // Create new material
         currentMaterial = new Material(Shader.Find("Unlit/Texture"));
         currentMaterial.mainTexture = sprite.texture;
 
-        if (frameData != null)
-        {
-            frameData.material = currentMaterial;
-        }
+        // Apply to renderer
+        quadRenderer.material = currentMaterial;
 
-        if (quadRenderer != null)
-        {
-            quadRenderer.material = currentMaterial;
-        }
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Applied artwork to frame {frameId}", this);
     }
 
+    /// <summary>
+    /// Hiển thị loading texture
+    /// </summary>
     private void ShowLoadingTexture()
     {
-        if (loadingTexture != null && quadRenderer != null)
-        {
-            Material loadingMat = new Material(Shader.Find("Unlit/Texture"));
-            loadingMat.mainTexture = loadingTexture;
-            quadRenderer.material = loadingMat;
-        }
+        if (loadingTexture == null || quadRenderer == null)
+            return;
+
+        Material loadingMat = new Material(Shader.Find("Unlit/Texture"));
+        loadingMat.mainTexture = loadingTexture;
+        quadRenderer.material = loadingMat;
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Showing loading texture for frame {frameId}", this);
     }
 
+    /// <summary>
+    /// Clear artwork và cache
+    /// </summary>
     public void ClearArtwork()
     {
-        ArtManager.Instance.ClearImageFromCache(frameId);
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Clearing artwork for frame {frameId}", this);
 
+        // Clear cache in ArtManager
+        ArtManager.Instance.ClearFrameCache(frameId);
+
+        // Clear local references
+        currentSprite = null;
+        currentImageData = null;
+
+        // Cleanup material
         if (currentMaterial != null)
         {
             Destroy(currentMaterial);
             currentMaterial = null;
         }
 
-        frameData = null;
-
-        if (quadRenderer != null)
-        {
-            ShowLoadingTexture();
-        }
+        // Show loading texture
+        ShowLoadingTexture();
     }
 
-    public void ReloadArtwork(bool forceRefresh = false)
+    /// <summary>
+    /// Reload artwork (clear + load)
+    /// </summary>
+    public void ReloadArtwork(bool forceRefresh = true)
     {
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Reloading artwork for frame {frameId}", this);
+
         ClearArtwork();
         LoadArtwork(forceRefresh);
     }
@@ -351,21 +381,23 @@ public class ArtFrame : MonoBehaviour
 
     #region Auto Resize
 
+    /// <summary>
+    /// Resize frame theo tỷ lệ ảnh
+    /// </summary>
     private void ResizeFrameByImageRatio(Texture2D texture)
     {
         if (texture == null || cubeFrame == null)
         {
             if (showDebug)
-            {
-                Debug.LogWarning($"[ArtFrame] Không thể resize frame {frameId}: " +
-                               $"texture={texture != null}, cubeFrame={cubeFrame != null}", this);
-            }
+                Debug.LogWarning($"[ArtFrame] Cannot resize: texture or cubeFrame is null", this);
             return;
         }
 
         float currentHeight = cubeFrame.localScale.y;
         float imageRatio = (float)texture.width / (float)texture.height;
         float newWidth = currentHeight * imageRatio;
+        
+        // Clamp width
         newWidth = Mathf.Clamp(newWidth, widthLimits.x, widthLimits.y);
 
         Vector3 newScale = new Vector3(newWidth, currentHeight, cubeFrame.localScale.z);
@@ -373,24 +405,25 @@ public class ArtFrame : MonoBehaviour
 
         if (showDebug)
         {
-            Debug.Log($"[ArtFrame] Frame {frameId} đã resize:\n" +
-                      $"  • Texture: {texture.width}x{texture.height}\n" +
-                      $"  • Ratio: {imageRatio:F2}\n" +
-                      $"  • Chiều cao cố định: {currentHeight:F2}\n" +
-                      $"  • Chiều rộng mới: {newWidth:F2}\n" +
-                      $"  • Scale cuối: {newScale}", this);
+            Debug.Log($"[ArtFrame] Resized frame {frameId}:\n" +
+                      $"  Texture: {texture.width}x{texture.height}\n" +
+                      $"  Ratio: {imageRatio:F2}\n" +
+                      $"  New Scale: {newScale}", this);
         }
     }
 
+    /// <summary>
+    /// Manual resize (gọi từ editor hoặc code)
+    /// </summary>
     public void ManualResize()
     {
-        if (frameData != null && frameData.sprite != null && frameData.sprite.texture != null)
+        if (currentSprite != null && currentSprite.texture != null)
         {
-            ResizeFrameByImageRatio(frameData.sprite.texture);
+            ResizeFrameByImageRatio(currentSprite.texture);
         }
         else
         {
-            Debug.LogWarning($"[ArtFrame] Không thể resize frame {frameId}: chưa có sprite", this);
+            Debug.LogWarning($"[ArtFrame] Cannot resize: No sprite loaded", this);
         }
     }
 
@@ -398,205 +431,322 @@ public class ArtFrame : MonoBehaviour
 
     #region Transform Sync
 
-    public void SyncTransformFromServer()
+    /// <summary>
+    /// Apply transform từ ImageData
+    /// </summary>
+    private void ApplyTransformFromImageData(ImageData data)
     {
-        ImageData imageData = ArtManager.Instance.GetImageDataForFrame(frameId);
-
-        if (imageData == null)
-        {
-            if (showDebug) Debug.Log($"[ArtFrame] Không có dữ liệu transform từ server cho frame {frameId}", this);
+        if (data == null)
             return;
-        }
 
-        if (showDebug)
+        bool hasChanges = false;
+
+        // Apply position
+        if (syncPosition && data.position != null)
         {
-            string jsonString = JsonUtility.ToJson(imageData);
-            Debug.Log($"[ArtFrame] Dữ liệu JSON từ server cho frame {frameId}: {jsonString}", this);
-
-            if (imageData.position != null)
-                Debug.Log($"[ArtFrame] Position từ server: ({imageData.position.x}, {imageData.position.y}, {imageData.position.z})", this);
-            else
-                Debug.Log($"[ArtFrame] Position từ server là null", this);
-
-            if (imageData.rotation != null)
-                Debug.Log($"[ArtFrame] Rotation từ server: ({imageData.rotation.x}, {imageData.rotation.y}, {imageData.rotation.z})", this);
-            else
-                Debug.Log($"[ArtFrame] Rotation từ server là null", this);
-        }
-
-        if (syncPosition && imageData.position != null)
-        {
-            Vector3 serverPosition = imageData.position.ToVector3();
+            Vector3 serverPosition = data.position.ToVector3();
             transform.position = serverPosition;
             lastPosition = serverPosition;
+            hasChanges = true;
 
-            if (showDebug) Debug.Log($"[ArtFrame] Đã đồng bộ vị trí frame {frameId} từ server: {serverPosition}", this);
+            if (showDebug)
+                Debug.Log($"[ArtFrame] Applied position from server: {serverPosition}", this);
         }
 
-        if (syncRotation && imageData.rotation != null)
+        // Apply rotation
+        if (syncRotation && data.rotation != null)
         {
-            Vector3 serverRotation = imageData.rotation.ToVector3();
+            Vector3 serverRotation = data.rotation.ToVector3();
             transform.eulerAngles = serverRotation;
             lastRotation = transform.rotation;
+            hasChanges = true;
 
-            if (showDebug) Debug.Log($"[ArtFrame] Đã đồng bộ góc xoay frame {frameId} từ server: {serverRotation}", this);
+            if (showDebug)
+                Debug.Log($"[ArtFrame] Applied rotation from server: {serverRotation}", this);
         }
 
+        // Update last scale
         lastScale = transform.localScale;
+
+        if (hasChanges && showDebug)
+        {
+            Debug.Log($"[ArtFrame] Transform synced from server for frame {frameId}", this);
+        }
     }
 
+    /// <summary>
+    /// Sync transform từ server (force reload data)
+    /// </summary>
+    public void SyncTransformFromServer()
+    {
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Syncing transform from server for frame {frameId}", this);
+
+        // Lấy ImageData từ cache hoặc server
+        ImageData cachedData = ArtManager.Instance.GetCachedImageData(frameId);
+        
+        if (cachedData != null)
+        {
+            ApplyTransformFromImageData(cachedData);
+        }
+        else
+        {
+            // Load from server
+            APIManager.Instance.GetImageByFrame(frameId, (success, data, error) =>
+            {
+                if (success && data != null)
+                {
+                    ApplyTransformFromImageData(data);
+                }
+                else
+                {
+                    Debug.LogWarning($"[ArtFrame] Failed to sync transform: {error}", this);
+                }
+            });
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra và lưu transform nếu có thay đổi
+    /// </summary>
+    private void CheckAndSaveTransform()
+    {
+        bool hasChanges = false;
+
+        if (syncPosition && Vector3.Distance(lastPosition, transform.position) > 0.01f)
+            hasChanges = true;
+
+        if (syncRotation && Quaternion.Angle(lastRotation, transform.rotation) > 0.1f)
+            hasChanges = true;
+
+        if (syncScale && Vector3.Distance(lastScale, transform.localScale) > 0.01f)
+            hasChanges = true;
+
+        if (hasChanges)
+        {
+            SaveTransformToServer();
+            lastSyncTime = Time.time;
+        }
+    }
+
+    /// <summary>
+    /// Lưu transform lên server qua APIManager
+    /// </summary>
     public void SaveTransformToServer()
     {
-        if (showDebug) Debug.Log($"[ArtFrame] Đang lưu transform của frame {frameId} lên server", this);
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Saving transform to server for frame {frameId}", this);
 
-        lastPosition = transform.position;
-        lastRotation = transform.rotation;
-        lastScale = transform.localScale;
+        Vector3 position = transform.position;
+        Vector3 rotation = transform.eulerAngles;
+
+        APIManager.Instance.UpdateTransform(frameId, position, rotation, (success, message) =>
+        {
+            if (success)
+            {
+                lastPosition = position;
+                lastRotation = transform.rotation;
+                lastScale = transform.localScale;
+
+                if (showDebug)
+                    Debug.Log($"[ArtFrame] Transform saved successfully for frame {frameId}", this);
+            }
+            else
+            {
+                Debug.LogError($"[ArtFrame] Failed to save transform: {message}", this);
+            }
+        });
     }
 
+    /// <summary>
+    /// Force sync transform (refresh data từ server)
+    /// </summary>
     public void ForceSyncTransformFromServer()
     {
-        if (showDebug) Debug.Log($"[ArtFrame] Force sync transform from server for frame {frameId}", this);
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Force syncing transform for frame {frameId}", this);
 
-        ArtManager.Instance.ForceRefreshFrame(frameId);
-        StartCoroutine(DelayedSyncTransform());
+        StartCoroutine(ForceSyncCoroutine());
     }
 
-    private IEnumerator DelayedSyncTransform()
+    private IEnumerator ForceSyncCoroutine()
     {
+        // Refresh frame data
+        ArtManager.Instance.RefreshFrame(frameId, (sprite, data) =>
+        {
+            if (data != null)
+            {
+                ApplyTransformFromImageData(data);
+            }
+        });
+
         yield return new WaitForSeconds(0.5f);
-        SyncTransformFromServer();
     }
 
     #endregion
 
     #region Button Management
 
+    /// <summary>
+    /// Setup button events
+    /// </summary>
     private void SetupButtonEvents()
     {
-        // Đảm bảo buttons có raycast target
-        EnsureButtonRaycastTarget();
-
-        // Thiết lập sự kiện cho nút Info
+        // Setup Info button
         if (infoButton != null)
         {
             infoButton.onClick.RemoveAllListeners();
             infoButton.onClick.AddListener(OnInfoButtonClicked);
+            EnsureButtonInteractable(infoButton);
 
             if (showDebug)
-            {
-                Debug.Log($"[ArtFrame] Info button setup for frame {frameId}");
-            }
+                Debug.Log($"[ArtFrame] Info button setup for frame {frameId}", this);
         }
 
-        // Thiết lập sự kiện cho nút Transform
+        // Setup Transform button
         if (transformButton != null)
         {
             transformButton.onClick.RemoveAllListeners();
             transformButton.onClick.AddListener(OnTransformButtonClicked);
+            EnsureButtonInteractable(transformButton);
 
             if (showDebug)
-            {
-                Debug.Log($"[ArtFrame] Transform button setup for frame {frameId}");
-            }
+                Debug.Log($"[ArtFrame] Transform button setup for frame {frameId}", this);
         }
     }
 
-    private void EnsureButtonRaycastTarget()
+    /// <summary>
+    /// Đảm bảo button có thể click được
+    /// </summary>
+    private void EnsureButtonInteractable(Button button)
     {
-        if (infoButton != null)
-        {
-            Image image = infoButton.GetComponent<Image>();
-            if (image != null)
-            {
-                image.raycastTarget = true;
-            }
-            infoButton.interactable = true;
-        }
+        if (button == null)
+            return;
 
-        if (transformButton != null)
+        button.interactable = true;
+
+        Image image = button.GetComponent<Image>();
+        if (image != null)
         {
-            Image image = transformButton.GetComponent<Image>();
-            if (image != null)
-            {
-                image.raycastTarget = true;
-            }
-            transformButton.interactable = true;
+            image.raycastTarget = true;
         }
     }
 
+    /// <summary>
+    /// Setup canvas sorting order
+    /// </summary>
+    private void SetupCanvasSorting()
+    {
+        if (buttonContainer == null)
+            return;
+
+        Canvas canvas = buttonContainer.GetComponent<Canvas>();
+        if (canvas != null)
+        {
+            canvas.sortingOrder = 100;
+        }
+    }
+
+    /// <summary>
+    /// Handler cho Info button
+    /// </summary>
     private void OnInfoButtonClicked()
     {
         if (showDebug)
-        {
-            Debug.Log($"[ArtFrame] Info button clicked for frame {frameId}");
-        }
+            Debug.Log($"[ArtFrame] Info button clicked for frame {frameId}", this);
 
-        if (APIManager.Instance == null)
-        {
-            Debug.LogError("[ArtFrame] APIManager.Instance is null!");
-            return;
-        }
+        // Lấy data từ cache hoặc server
+        ImageData data = currentImageData ?? ArtManager.Instance.GetCachedImageData(frameId);
 
-        APIManager.Instance.GetImageByFrame(frameId, (success, imageData, error) =>
+        if (data != null)
         {
-            if (success && imageData != null)
+            ShowImageEditPopup(data);
+        }
+        else
+        {
+            // Load from server
+            APIManager.Instance.GetImageByFrame(frameId, (success, imageData, error) =>
             {
-                if (ImageEditPopup.Instance != null)
+                if (success && imageData != null)
                 {
-                    ImageEditPopup.Instance.Show(imageData);
+                    ShowImageEditPopup(imageData);
                 }
                 else
                 {
-                    Debug.LogError("[ArtFrame] ImageEditPopup.Instance is null!");
+                    Debug.LogError($"[ArtFrame] Failed to get image data: {error}", this);
                 }
-            }
-            else
-            {
-                Debug.LogError($"[ArtFrame] Không lấy được dữ liệu hình ảnh cho frame {frameId}: {error}");
-            }
-        });
+            });
+        }
     }
 
+    /// <summary>
+    /// Handler cho Transform button
+    /// </summary>
     private void OnTransformButtonClicked()
     {
         if (showDebug)
-        {
-            Debug.Log($"[ArtFrame] Transform button clicked for frame {frameId}");
-        }
+            Debug.Log($"[ArtFrame] Transform button clicked for frame {frameId}", this);
 
-        if (APIManager.Instance == null)
-        {
-            Debug.LogError("[ArtFrame] APIManager.Instance is null!");
-            return;
-        }
+        // Lấy data từ cache hoặc server
+        ImageData data = currentImageData ?? ArtManager.Instance.GetCachedImageData(frameId);
 
-        APIManager.Instance.GetImageByFrame(frameId, (success, imageData, error) =>
+        if (data != null)
         {
-            if (success && imageData != null)
+            ShowTransformEditPopup(data);
+        }
+        else
+        {
+            // Load from server
+            APIManager.Instance.GetImageByFrame(frameId, (success, imageData, error) =>
             {
-                if (TransformEditPopup.Instance != null)
+                if (success && imageData != null)
                 {
-                    TransformEditPopup.Instance.Show(imageData, this);
+                    ShowTransformEditPopup(imageData);
                 }
                 else
                 {
-                    Debug.LogError("[ArtFrame] TransformEditPopup.Instance is null!");
+                    Debug.LogError($"[ArtFrame] Failed to get image data: {error}", this);
                 }
-            }
-            else
-            {
-                Debug.LogError($"[ArtFrame] Không lấy được dữ liệu hình ảnh cho frame {frameId}: {error}");
-            }
-        });
+            });
+        }
+    }
+
+    /// <summary>
+    /// Hiển thị ImageEditPopup
+    /// </summary>
+    private void ShowImageEditPopup(ImageData data)
+    {
+        if (ImageEditPopup.Instance != null)
+        {
+            ImageEditPopup.Instance.Show(data, null);
+        }
+        else
+        {
+            Debug.LogError("[ArtFrame] ImageEditPopup.Instance is null!", this);
+        }
+    }
+
+    /// <summary>
+    /// Hiển thị TransformEditPopup
+    /// </summary>
+    private void ShowTransformEditPopup(ImageData data)
+    {
+        if (TransformEditPopup.Instance != null)
+        {
+            TransformEditPopup.Instance.Show(data, this);
+        }
+        else
+        {
+            Debug.LogError("[ArtFrame] TransformEditPopup.Instance is null!", this);
+        }
     }
 
     #endregion
 
-    #region Button Visibility - ✅ ĐƠN GIẢN HÓA
+    #region Button Visibility
 
     /// <summary>
-    /// ✅ Kiểm tra khoảng cách và hiển thị/ẩn buttons
+    /// Kiểm tra và cập nhật visibility của buttons dựa trên khoảng cách
     /// </summary>
     private void CheckButtonVisibility()
     {
@@ -606,41 +756,28 @@ public class ArtFrame : MonoBehaviour
             if (mainCamera == null) return;
         }
 
-        if (buttonContainer == null) return;
+        if (buttonContainer == null)
+            return;
 
         // Tính khoảng cách từ camera đến frame
         float distanceToCamera = Vector3.Distance(transform.position, mainCamera.transform.position);
 
-        // ✅ Hiển thị buttons nếu trong vùng distance
-        if (distanceToCamera <= buttonDisplayDistance)
-        {
-            if (!buttonContainer.activeSelf)
-            {
-                buttonContainer.SetActive(true);
+        // Hiển thị/ẩn buttons dựa trên khoảng cách
+        bool shouldShow = distanceToCamera <= buttonDisplayDistance;
 
-                if (showDebug)
-                {
-                    Debug.Log($"[ArtFrame] Hiển thị buttons cho frame {frameId} (distance: {distanceToCamera:F2})");
-                }
-            }
-        }
-        else
+        if (buttonContainer.activeSelf != shouldShow)
         {
-            // ✅ Ẩn buttons nếu vượt quá distance
-            if (buttonContainer.activeSelf)
-            {
-                buttonContainer.SetActive(false);
+            buttonContainer.SetActive(shouldShow);
 
-                if (showDebug)
-                {
-                    Debug.Log($"[ArtFrame] Ẩn buttons cho frame {frameId} (distance: {distanceToCamera:F2})");
-                }
+            if (showDebug)
+            {
+                Debug.Log($"[ArtFrame] Buttons {(shouldShow ? "shown" : "hidden")} for frame {frameId} (distance: {distanceToCamera:F2})", this);
             }
         }
     }
 
     /// <summary>
-    /// Kiểm tra pointer có đang trên button container của frame này không
+    /// Kiểm tra pointer có đang trên buttons không
     /// </summary>
     public bool IsPointerOverButtons()
     {
@@ -667,7 +804,7 @@ public class ArtFrame : MonoBehaviour
     }
 
     /// <summary>
-    /// Force hiển thị buttons (gọi từ ArtFrameController)
+    /// Force hiển thị buttons
     /// </summary>
     public void ForceShowButtons()
     {
@@ -676,14 +813,12 @@ public class ArtFrame : MonoBehaviour
             buttonContainer.SetActive(true);
 
             if (showDebug)
-            {
-                Debug.Log($"[ArtFrame] Force show buttons cho frame {frameId}");
-            }
+                Debug.Log($"[ArtFrame] Force showing buttons for frame {frameId}", this);
         }
     }
 
     /// <summary>
-    /// Force ẩn buttons (gọi từ ArtFrameController)
+    /// Force ẩn buttons
     /// </summary>
     public void ForceHideButtons()
     {
@@ -692,10 +827,43 @@ public class ArtFrame : MonoBehaviour
             buttonContainer.SetActive(false);
 
             if (showDebug)
-            {
-                Debug.Log($"[ArtFrame] Force hide buttons cho frame {frameId}");
-            }
+                Debug.Log($"[ArtFrame] Force hiding buttons for frame {frameId}", this);
         }
+    }
+
+    #endregion
+
+    #region Cleanup
+
+    /// <summary>
+    /// Cleanup resources
+    /// </summary>
+    private void CleanupResources()
+    {
+        // Remove button listeners
+        if (infoButton != null)
+        {
+            infoButton.onClick.RemoveAllListeners();
+        }
+
+        if (transformButton != null)
+        {
+            transformButton.onClick.RemoveAllListeners();
+        }
+
+        // Destroy material
+        if (currentMaterial != null)
+        {
+            Destroy(currentMaterial);
+            currentMaterial = null;
+        }
+
+        // Clear references
+        currentSprite = null;
+        currentImageData = null;
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Resources cleaned up for frame {frameId}", this);
     }
 
     #endregion
@@ -704,13 +872,14 @@ public class ArtFrame : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
+        // Draw frame bounds
         if (showDebug && cubeFrame != null)
         {
             Gizmos.color = Color.cyan;
             Gizmos.DrawWireCube(cubeFrame.position, cubeFrame.localScale);
         }
 
-        // Hiển thị vùng kích hoạt nút
+        // Draw button visibility range
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, buttonDisplayDistance);
     }

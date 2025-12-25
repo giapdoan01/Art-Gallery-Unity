@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 using System.Security.Cryptography;
 using System.Text;
+using System.Linq;
 
 [Serializable]
 public class ImageResponse
@@ -86,50 +87,47 @@ public class ArtManager : MonoBehaviour
 {
     private static ArtManager _instance;
 
-    [Header("Server Settings")]
-    [SerializeField] private string baseUrl = "https://gallery-server-mutilplayer.onrender.com/admin";
-    [SerializeField] private float requestTimeout = 10f;
-    [SerializeField] private bool cacheImages = true;
-
     [Header("Loading Settings")]
-    [SerializeField] private int maxConcurrentDownloads = 1; // Tải tối đa 1 ảnh/lúc
-    [SerializeField] private float downloadDelay = 0.5f; // Delay giữa các lần tải
-    [SerializeField] private bool onlyRefreshWhenIdle = true; // Chỉ refresh khi không di chuyển
+    [SerializeField] private int maxConcurrentDownloads = 2;
+    [SerializeField] private float downloadDelay = 0.5f;
+    [SerializeField] private bool onlyRefreshWhenIdle = true;
 
     [Header("Background Loading")]
     [SerializeField] private bool useBackgroundLoading = true;
-    [SerializeField] private int maxFramesPerSecond = 30; // Giới hạn FPS khi load
     [SerializeField] private float maxLoadTimePerFrame = 0.016f; // Max 16ms/frame
 
     [Header("Player Detection")]
     [SerializeField] private Transform playerTransform;
-    [SerializeField] private float idleThreshold = 0.1f; // Tốc độ < 0.1 = idle
+    [SerializeField] private float idleThreshold = 0.1f;
+
+    [Header("Cache Settings")]
+    [SerializeField] private bool enableCache = true;
+    [SerializeField] private int maxCacheSize = 50; // Số lượng ảnh tối đa trong cache
+    [SerializeField] private float cacheCleanupInterval = 60f; // Dọn cache mỗi 60s
 
     [Header("Debug")]
     [SerializeField] private bool showDebug = true;
 
-    // Cache
-    private Dictionary<int, Sprite> imageCache = new Dictionary<int, Sprite>();
+    // Cache - CHỈ ArtManager quản lý cache
+    private Dictionary<int, Sprite> spriteCache = new Dictionary<int, Sprite>();
+    private Dictionary<int, Texture2D> textureCache = new Dictionary<int, Texture2D>();
+    private Dictionary<int, ImageData> imageDataCache = new Dictionary<int, ImageData>();
     private Dictionary<int, string> imageHashCache = new Dictionary<int, string>();
     private Dictionary<int, long> lastModifiedCache = new Dictionary<int, long>();
-    private Dictionary<int, float> lastLoadTime = new Dictionary<int, float>();
-    // Thêm cache cho ImageData
-    private Dictionary<int, ImageData> imageDataCache = new Dictionary<int, ImageData>();
+    private Dictionary<int, float> lastAccessTime = new Dictionary<int, float>();
 
     // Loading queue
     private Queue<int> downloadQueue = new Queue<int>();
-    private HashSet<int> loadingFrames = new HashSet<int>();
-    private Dictionary<int, List<ImageLoadCallback>> pendingCallbacks = new Dictionary<int, List<ImageLoadCallback>>();
+    private HashSet<int> currentlyLoading = new HashSet<int>();
+    private Dictionary<int, List<Action<Sprite, ImageData>>> pendingCallbacks = new Dictionary<int, List<Action<Sprite, ImageData>>>();
 
-    // Performance tracking
-    private int currentDownloads = 0;
-    private float lastFrameTime = 0f;
+    // Player movement tracking
     private Vector3 lastPlayerPosition;
-    private bool isPlayerIdle = true;
+    private float lastMovementTime;
 
-    public delegate void ImageLoadCallback(Sprite sprite);
-    public event Action<int, Sprite> OnImageUpdated;
-    public event Action<int, string> OnImageLoadError;
+    // Events
+    public event Action<int, Sprite, ImageData> OnImageLoaded;
+    public event Action<int, string> OnImageLoadFailed;
 
     public static ArtManager Instance
     {
@@ -156,486 +154,529 @@ public class ArtManager : MonoBehaviour
         _instance = this;
         DontDestroyOnLoad(gameObject);
 
-        if (showDebug) Debug.Log("[ArtManager] Initialized - Manual Refresh Version");
+        if (showDebug) Debug.Log("[ArtManager] Initialized");
     }
 
     private void Start()
     {
-        // Tự động tìm player nếu chưa gán
         if (playerTransform == null)
         {
             GameObject player = GameObject.FindGameObjectWithTag("Player");
             if (player != null)
-            {
                 playerTransform = player.transform;
-            }
         }
 
         if (playerTransform != null)
-        {
             lastPlayerPosition = playerTransform.position;
-        }
 
-        // Khởi động coroutine tải ảnh nền
-        StartCoroutine(BackgroundDownloadRoutine());
+        // Bắt đầu background loading
+        if (useBackgroundLoading)
+            StartCoroutine(BackgroundLoadingCoroutine());
+
+        // Bắt đầu cache cleanup
+        if (enableCache)
+            StartCoroutine(CacheCleanupCoroutine());
     }
 
     private void Update()
     {
-        // Kiểm tra player có đang idle không
-        if (playerTransform != null && onlyRefreshWhenIdle)
+        // Track player movement
+        if (playerTransform != null)
         {
             float distance = Vector3.Distance(playerTransform.position, lastPlayerPosition);
-            float speed = distance / Time.deltaTime;
-
-            isPlayerIdle = speed < idleThreshold;
-            lastPlayerPosition = playerTransform.position;
-        }
-        else
-        {
-            isPlayerIdle = true; // Luôn cho phép refresh nếu không check idle
+            if (distance > idleThreshold)
+            {
+                lastMovementTime = Time.time;
+                lastPlayerPosition = playerTransform.position;
+            }
         }
     }
 
+    #region Public API - Load Images
+
     /// <summary>
-    /// Kiểm tra một frame có cần cập nhật không (chỉ lấy metadata)
+    /// Load ảnh theo frame ID - Sử dụng cache nếu có
     /// </summary>
-    private IEnumerator CheckFrameForUpdate(int frameId)
+    public void LoadImage(int frameId, Action<Sprite, ImageData> callback)
     {
-        string url = $"{baseUrl}/getimage/{frameId}";
-
-        using (UnityWebRequest request = UnityWebRequest.Get(url))
+        // Kiểm tra cache trước
+        if (enableCache && spriteCache.ContainsKey(frameId))
         {
-            request.timeout = Mathf.RoundToInt(requestTimeout);
+            if (showDebug)
+                Debug.Log($"[ArtManager] Loading from cache: Frame {frameId}");
 
-            yield return request.SendWebRequest();
+            lastAccessTime[frameId] = Time.time;
+            callback?.Invoke(spriteCache[frameId], imageDataCache[frameId]);
+            return;
+        }
 
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                if (showDebug) Debug.LogWarning($"[ArtManager] Không thể check frame {frameId}: {request.error}");
-                yield break;
-            }
+        // Thêm callback vào pending list
+        if (!pendingCallbacks.ContainsKey(frameId))
+            pendingCallbacks[frameId] = new List<Action<Sprite, ImageData>>();
+        
+        pendingCallbacks[frameId].Add(callback);
 
-            ImageResponse response = JsonUtility.FromJson<ImageResponse>(request.downloadHandler.text);
+        // Nếu đang load rồi thì không cần thêm vào queue
+        if (currentlyLoading.Contains(frameId))
+        {
+            if (showDebug)
+                Debug.Log($"[ArtManager] Already loading: Frame {frameId}");
+            return;
+        }
 
-            if (!response.success || response.data == null)
-            {
-                yield break;
-            }
-
-            // So sánh hash hoặc lastModified
-            bool needsUpdate = false;
-
-            // Nếu server trả về hash
-            if (!string.IsNullOrEmpty(response.data.hash))
-            {
-                if (!imageHashCache.ContainsKey(frameId) || imageHashCache[frameId] != response.data.hash)
-                {
-                    needsUpdate = true;
-                }
-            }
-            // Hoặc dùng lastModified
-            else if (response.data.lastModified > 0)
-            {
-                if (!lastModifiedCache.ContainsKey(frameId) || lastModifiedCache[frameId] < response.data.lastModified)
-                {
-                    needsUpdate = true;
-                }
-            }
-
-            if (needsUpdate)
-            {
-                if (showDebug) Debug.Log($"[ArtManager] Frame {frameId} có cập nhật mới, thêm vào queue");
-
-                // Thêm vào queue để tải sau
-                if (!downloadQueue.Contains(frameId) && !loadingFrames.Contains(frameId))
-                {
-                    downloadQueue.Enqueue(frameId);
-                }
-            }
+        // Thêm vào queue để load
+        if (!downloadQueue.Contains(frameId))
+        {
+            downloadQueue.Enqueue(frameId);
+            
+            if (showDebug)
+                Debug.Log($"[ArtManager] Added to queue: Frame {frameId}");
         }
     }
 
     /// <summary>
-    /// Background download - Tải ảnh từ queue một cách mượt mà
+    /// Load nhiều ảnh cùng lúc
     /// </summary>
-    private IEnumerator BackgroundDownloadRoutine()
+    public void LoadImages(List<int> frameIds, Action<Dictionary<int, Sprite>> callback)
+    {
+        StartCoroutine(LoadMultipleImagesCoroutine(frameIds, callback));
+    }
+
+    private IEnumerator LoadMultipleImagesCoroutine(List<int> frameIds, Action<Dictionary<int, Sprite>> callback)
+    {
+        Dictionary<int, Sprite> results = new Dictionary<int, Sprite>();
+        int completed = 0;
+
+        foreach (int frameId in frameIds)
+        {
+            LoadImage(frameId, (sprite, data) =>
+            {
+                if (sprite != null)
+                    results[frameId] = sprite;
+                completed++;
+            });
+        }
+
+        // Đợi tất cả load xong
+        yield return new WaitUntil(() => completed >= frameIds.Count);
+
+        callback?.Invoke(results);
+    }
+
+    #endregion
+
+    #region Background Loading
+
+    private IEnumerator BackgroundLoadingCoroutine()
     {
         while (true)
         {
-            yield return null;
-
-            // Không tải nếu đang có quá nhiều downloads
-            if (currentDownloads >= maxConcurrentDownloads)
+            // Chỉ load khi idle nếu setting bật
+            if (onlyRefreshWhenIdle && !IsPlayerIdle())
             {
-                continue;
-            }
-
-            // Không tải nếu player đang di chuyển
-            if (!isPlayerIdle && onlyRefreshWhenIdle)
-            {
-                continue;
-            }
-
-            // Không tải nếu FPS thấp
-            if (useBackgroundLoading && Time.deltaTime > maxLoadTimePerFrame * 2)
-            {
-                if (showDebug) Debug.LogWarning("[ArtManager] FPS thấp, tạm dừng download");
-                yield return new WaitForSeconds(1f);
-                continue;
-            }
-
-            // Lấy frame từ queue
-            if (downloadQueue.Count > 0)
-            {
-                int frameId = downloadQueue.Dequeue();
-
-                if (showDebug) Debug.Log($"[ArtManager] Bắt đầu tải frame {frameId} từ queue ({downloadQueue.Count} còn lại)");
-
-                // Tải ảnh
-                StartCoroutine(DownloadFrameInBackground(frameId));
-
-                // Delay giữa các lần tải
-                yield return new WaitForSeconds(downloadDelay);
-            }
-            else
-            {
-                // Queue rỗng, đợi
                 yield return new WaitForSeconds(0.5f);
+                continue;
             }
+
+            // Kiểm tra queue
+            if (downloadQueue.Count == 0 || currentlyLoading.Count >= maxConcurrentDownloads)
+            {
+                yield return new WaitForSeconds(0.1f);
+                continue;
+            }
+
+            // Lấy frame tiếp theo từ queue
+            int frameId = downloadQueue.Dequeue();
+            
+            if (showDebug)
+                Debug.Log($"[ArtManager] Background loading: Frame {frameId}");
+
+            // Load frame
+            yield return StartCoroutine(LoadFrameCoroutine(frameId));
+
+            // Delay giữa các lần load
+            yield return new WaitForSeconds(downloadDelay);
         }
     }
 
-    /// <summary>
-    /// Tải ảnh trong background không block main thread
-    /// </summary>
-    private IEnumerator DownloadFrameInBackground(int frameId)
+    private IEnumerator LoadFrameCoroutine(int frameId)
     {
-        currentDownloads++;
-        loadingFrames.Add(frameId);
+        currentlyLoading.Add(frameId);
+        float startTime = Time.realtimeSinceStartup;
 
-        // Lấy URL từ server
-        string imageUrl = null;
-        string url = $"{baseUrl}/getimage/{frameId}";
+        bool success = false;
+        ImageData imageData = null;
+        Sprite sprite = null;
 
-        using (UnityWebRequest request = UnityWebRequest.Get(url))
+        // Bước 1: Lấy thông tin ảnh từ server qua APIManager
+        bool dataLoaded = false;
+        string dataError = null;
+
+        APIManager.Instance.GetImageByFrame(frameId, (dataSuccess, data, error) =>
         {
-            request.timeout = Mathf.RoundToInt(requestTimeout);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
+            dataLoaded = true;
+            if (dataSuccess && data != null)
             {
-                ImageResponse response = JsonUtility.FromJson<ImageResponse>(request.downloadHandler.text);
-                if (response.success && response.data != null)
-                {
-                    imageUrl = response.data.url;
-
-                    // Lưu hash nếu có
-                    if (!string.IsNullOrEmpty(response.data.hash))
-                    {
-                        imageHashCache[frameId] = response.data.hash;
-                    }
-
-                    if (response.data.lastModified > 0)
-                    {
-                        lastModifiedCache[frameId] = response.data.lastModified;
-                    }
-
-                    // Lưu ImageData vào cache
-                    imageDataCache[frameId] = response.data;
-                }
+                imageData = data;
+                success = true;
             }
-        }
+            else
+            {
+                dataError = error;
+            }
+        });
 
-        if (string.IsNullOrEmpty(imageUrl))
+        // Đợi API response
+        yield return new WaitUntil(() => dataLoaded);
+
+        if (!success || imageData == null)
         {
-            currentDownloads--;
-            loadingFrames.Remove(frameId);
+            if (showDebug)
+                Debug.LogWarning($"[ArtManager] Failed to load data for frame {frameId}: {dataError}");
+            
+            InvokeCallbacks(frameId, null, null);
+            OnImageLoadFailed?.Invoke(frameId, dataError);
+            currentlyLoading.Remove(frameId);
             yield break;
         }
 
-        // Tải ảnh với cache busting
-        string cacheBustedUrl = $"{imageUrl}?_t={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-
-        using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(cacheBustedUrl))
+        // Cache image data
+        if (enableCache)
         {
-            request.timeout = Mathf.RoundToInt(requestTimeout);
-            request.SetRequestHeader("Cache-Control", "no-cache");
+            imageDataCache[frameId] = imageData;
+            if (!string.IsNullOrEmpty(imageData.hash))
+                imageHashCache[frameId] = imageData.hash;
+            lastModifiedCache[frameId] = imageData.lastModified;
+        }
 
-            // Download với progress tracking
-            var operation = request.SendWebRequest();
+        // Bước 2: Tải texture từ URL qua APIManager
+        if (!string.IsNullOrEmpty(imageData.url))
+        {
+            bool textureLoaded = false;
+            Texture2D texture = null;
+            string textureError = null;
 
-            while (!operation.isDone)
+            APIManager.Instance.DownloadTexture(imageData.url, (textureSuccess, tex, error) =>
             {
-                // Yield mỗi frame để không block
-                yield return null;
-            }
-
-            if (request.result == UnityWebRequest.Result.Success)
-            {
-                Texture2D texture = DownloadHandlerTexture.GetContent(request);
-
-                if (texture != null)
+                textureLoaded = true;
+                if (textureSuccess && tex != null)
                 {
-                    // Tạo sprite
-                    Sprite sprite = Sprite.Create(
-                        texture,
-                        new Rect(0, 0, texture.width, texture.height),
-                        new Vector2(0.5f, 0.5f)
-                    );
-
-                    // Cleanup old sprite
-                    if (imageCache.ContainsKey(frameId) && imageCache[frameId] != null)
-                    {
-                        Texture2D oldTexture = imageCache[frameId].texture;
-                        if (oldTexture != null && oldTexture != texture)
-                        {
-                            Destroy(oldTexture);
-                        }
-                        Destroy(imageCache[frameId]);
-                    }
-
-                    // Cache
-                    imageCache[frameId] = sprite;
-                    lastLoadTime[frameId] = Time.time;
-
-                    if (showDebug) Debug.Log($"[ArtManager] ✓ Đã cập nhật frame {frameId} thành công");
-
-                    // Notify
-                    OnImageUpdated?.Invoke(frameId, sprite);
-                    InvokeAllCallbacks(frameId, sprite);
+                    texture = tex;
                 }
+                else
+                {
+                    textureError = error;
+                }
+            });
+
+            // Đợi texture download
+            yield return new WaitUntil(() => textureLoaded);
+
+            if (texture != null)
+            {
+                // Tạo sprite từ texture
+                sprite = Sprite.Create(
+                    texture,
+                    new Rect(0, 0, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f)
+                );
+
+                // Cache sprite và texture
+                if (enableCache)
+                {
+                    spriteCache[frameId] = sprite;
+                    textureCache[frameId] = texture;
+                    lastAccessTime[frameId] = Time.time;
+                }
+
+                float loadTime = Time.realtimeSinceStartup - startTime;
+                if (showDebug)
+                    Debug.Log($"[ArtManager] Loaded frame {frameId} in {loadTime:F2}s");
+
+                // Invoke callbacks
+                InvokeCallbacks(frameId, sprite, imageData);
+                OnImageLoaded?.Invoke(frameId, sprite, imageData);
             }
             else
             {
-                if (showDebug) Debug.LogError($"[ArtManager] Lỗi tải ảnh frame {frameId}: {request.error}");
-                OnImageLoadError?.Invoke(frameId, request.error);
+                if (showDebug)
+                    Debug.LogWarning($"[ArtManager] Failed to load texture for frame {frameId}: {textureError}");
+                
+                InvokeCallbacks(frameId, null, imageData);
+                OnImageLoadFailed?.Invoke(frameId, textureError);
             }
         }
+        else
+        {
+            // Không có URL - chỉ trả về data
+            InvokeCallbacks(frameId, null, imageData);
+        }
 
-        currentDownloads--;
-        loadingFrames.Remove(frameId);
+        currentlyLoading.Remove(frameId);
     }
 
-    /// <summary>
-    /// Get image - Ưu tiên cache, không block
-    /// </summary>
-    public void GetImageForFrame(int frameId, ImageLoadCallback onSuccess, bool forceRefresh = false)
-    {
-        if (frameId <= 0)
-        {
-            Debug.LogError($"[ArtManager] Frame ID không hợp lệ: {frameId}");
-            onSuccess?.Invoke(null);
-            return;
-        }
-
-        // Check cache
-        if (!forceRefresh && imageCache.TryGetValue(frameId, out Sprite cachedSprite))
-        {
-            if (showDebug) Debug.Log($"[ArtManager] Frame {frameId} từ cache");
-            onSuccess?.Invoke(cachedSprite);
-            return;
-        }
-
-        // Thêm callback vào pending
-        if (!pendingCallbacks.ContainsKey(frameId))
-        {
-            pendingCallbacks[frameId] = new List<ImageLoadCallback>();
-        }
-        if (onSuccess != null)
-        {
-            pendingCallbacks[frameId].Add(onSuccess);
-        }
-
-        // Thêm vào queue nếu chưa có
-        if (!loadingFrames.Contains(frameId) && !downloadQueue.Contains(frameId))
-        {
-            if (forceRefresh)
-            {
-                // Force refresh - ưu tiên cao, thêm vào đầu queue
-                var tempQueue = new Queue<int>();
-                tempQueue.Enqueue(frameId);
-                while (downloadQueue.Count > 0)
-                {
-                    tempQueue.Enqueue(downloadQueue.Dequeue());
-                }
-                downloadQueue = tempQueue;
-            }
-            else
-            {
-                downloadQueue.Enqueue(frameId);
-            }
-
-            if (showDebug) Debug.Log($"[ArtManager] Thêm frame {frameId} vào download queue");
-        }
-    }
-
-    private void InvokeAllCallbacks(int frameId, Sprite sprite)
+    private void InvokeCallbacks(int frameId, Sprite sprite, ImageData data)
     {
         if (pendingCallbacks.ContainsKey(frameId))
         {
             foreach (var callback in pendingCallbacks[frameId])
             {
-                try
-                {
-                    callback?.Invoke(sprite);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"[ArtManager] Lỗi callback frame {frameId}: {e.Message}");
-                }
+                callback?.Invoke(sprite, data);
             }
-            pendingCallbacks[frameId].Clear();
             pendingCallbacks.Remove(frameId);
         }
     }
 
-    // ============================================
-    // PUBLIC METHODS
-    // ============================================
+    #endregion
+
+    #region Cache Management
 
     /// <summary>
-    /// Lấy dữ liệu ImageData cho một frame cụ thể từ cache
+    /// Lấy sprite từ cache
     /// </summary>
-    public ImageData GetImageDataForFrame(int frameId)
+    public Sprite GetCachedSprite(int frameId)
     {
-        if (imageDataCache.TryGetValue(frameId, out ImageData data))
+        if (spriteCache.ContainsKey(frameId))
         {
-            return data;
+            lastAccessTime[frameId] = Time.time;
+            return spriteCache[frameId];
         }
         return null;
     }
 
     /// <summary>
-    /// Kiểm tra cập nhật cho một frame cụ thể theo yêu cầu
+    /// Lấy ImageData từ cache
     /// </summary>
-    public void CheckFrameUpdate(int frameId)
+    public ImageData GetCachedImageData(int frameId)
     {
-        if (showDebug) Debug.Log($"[ArtManager] Kiểm tra cập nhật cho frame {frameId}");
-        StartCoroutine(CheckFrameForUpdate(frameId));
+        if (imageDataCache.ContainsKey(frameId))
+        {
+            lastAccessTime[frameId] = Time.time;
+            return imageDataCache[frameId];
+        }
+        return null;
     }
 
     /// <summary>
-    /// Kiểm tra cập nhật cho tất cả các frame đã cache
+    /// Kiểm tra xem frame có trong cache không
     /// </summary>
-    public void CheckAllFrameUpdates()
+    public bool IsFrameCached(int frameId)
     {
-        if (showDebug) Debug.Log("[ArtManager] Kiểm tra cập nhật cho tất cả các frames");
-        List<int> framesToCheck = new List<int>(imageCache.Keys);
-
-        foreach (int frameId in framesToCheck)
-        {
-            StartCoroutine(CheckFrameForUpdate(frameId));
-        }
+        return spriteCache.ContainsKey(frameId);
     }
 
-    public void ForceRefreshFrame(int frameId)
+    /// <summary>
+    /// Xóa frame khỏi cache
+    /// </summary>
+    public void ClearFrameCache(int frameId)
     {
-        if (showDebug) Debug.Log($"[ArtManager] Force refresh frame {frameId}");
-
-        // Clear cache
-        if (imageCache.ContainsKey(frameId))
+        if (spriteCache.ContainsKey(frameId))
         {
-            imageCache.Remove(frameId);
-        }
-        if (imageHashCache.ContainsKey(frameId))
-        {
-            imageHashCache.Remove(frameId);
-        }
-        // Xóa cả ImageData khỏi cache
-        if (imageDataCache.ContainsKey(frameId))
-        {
-            imageDataCache.Remove(frameId);
+            Destroy(spriteCache[frameId]);
+            spriteCache.Remove(frameId);
         }
 
-        // Thêm vào đầu queue
-        var tempQueue = new Queue<int>();
-        tempQueue.Enqueue(frameId);
-        while (downloadQueue.Count > 0)
+        if (textureCache.ContainsKey(frameId))
         {
-            int id = downloadQueue.Dequeue();
-            if (id != frameId) // Tránh duplicate
-            {
-                tempQueue.Enqueue(id);
-            }
+            Destroy(textureCache[frameId]);
+            textureCache.Remove(frameId);
         }
-        downloadQueue = tempQueue;
+
+        imageDataCache.Remove(frameId);
+        imageHashCache.Remove(frameId);
+        lastModifiedCache.Remove(frameId);
+        lastAccessTime.Remove(frameId);
+
+        if (showDebug)
+            Debug.Log($"[ArtManager] Cleared cache for frame {frameId}");
     }
 
-    public void ForceRefreshAllFrames()
+    /// <summary>
+    /// Xóa toàn bộ cache
+    /// </summary>
+    public void ClearAllCache()
     {
-        if (showDebug) Debug.Log("[ArtManager] Force refresh all frames");
+        foreach (var sprite in spriteCache.Values)
+            if (sprite != null) Destroy(sprite);
 
-        List<int> frameIds = new List<int>(imageCache.Keys);
+        foreach (var texture in textureCache.Values)
+            if (texture != null) Destroy(texture);
 
-        foreach (int frameId in frameIds)
-        {
-            if (!downloadQueue.Contains(frameId) && !loadingFrames.Contains(frameId))
-            {
-                downloadQueue.Enqueue(frameId);
-            }
-        }
-    }
-
-    public void ClearImageFromCache(int frameId)
-    {
-        if (imageCache.ContainsKey(frameId))
-        {
-            if (imageCache[frameId] != null && imageCache[frameId].texture != null)
-            {
-                Destroy(imageCache[frameId].texture);
-            }
-            imageCache.Remove(frameId);
-        }
-
-        if (imageHashCache.ContainsKey(frameId))
-            imageHashCache.Remove(frameId);
-
-        if (lastModifiedCache.ContainsKey(frameId))
-            lastModifiedCache.Remove(frameId);
-
-        if (lastLoadTime.ContainsKey(frameId))
-            lastLoadTime.Remove(frameId);
-
-        // Xóa ImageData khỏi cache
-        if (imageDataCache.ContainsKey(frameId))
-            imageDataCache.Remove(frameId);
-    }
-
-    public void ClearCache()
-    {
-        foreach (var sprite in imageCache.Values)
-        {
-            if (sprite != null && sprite.texture != null)
-            {
-                Destroy(sprite.texture);
-            }
-        }
-
-        imageCache.Clear();
+        spriteCache.Clear();
+        textureCache.Clear();
+        imageDataCache.Clear();
         imageHashCache.Clear();
         lastModifiedCache.Clear();
-        lastLoadTime.Clear();
-        imageDataCache.Clear(); // Xóa cả ImageData cache
-        downloadQueue.Clear();
+        lastAccessTime.Clear();
+
+        if (showDebug)
+            Debug.Log("[ArtManager] Cleared all cache");
     }
 
-    public void SetPlayerTransform(Transform player)
+    /// <summary>
+    /// Tự động dọn cache theo LRU (Least Recently Used)
+    /// </summary>
+    private IEnumerator CacheCleanupCoroutine()
     {
-        playerTransform = player;
-        if (player != null)
+        while (true)
         {
-            lastPlayerPosition = player.position;
+            yield return new WaitForSeconds(cacheCleanupInterval);
+
+            if (spriteCache.Count > maxCacheSize)
+            {
+                // Sắp xếp theo thời gian truy cập
+                var sortedFrames = lastAccessTime.OrderBy(x => x.Value).ToList();
+                int toRemove = spriteCache.Count - maxCacheSize;
+
+                for (int i = 0; i < toRemove && i < sortedFrames.Count; i++)
+                {
+                    int frameId = sortedFrames[i].Key;
+                    ClearFrameCache(frameId);
+                }
+
+                if (showDebug)
+                    Debug.Log($"[ArtManager] Cache cleanup: Removed {toRemove} old entries");
+            }
         }
     }
 
-    // Getters
-    public bool IsImageCached(int frameId) => imageCache.ContainsKey(frameId);
-    public bool IsImageLoading(int frameId) => loadingFrames.Contains(frameId);
-    public Sprite GetCachedImage(int frameId) => imageCache.ContainsKey(frameId) ? imageCache[frameId] : null;
-    public int GetCachedImageCount() => imageCache.Count;
-    public int GetLoadingFrameCount() => loadingFrames.Count;
-    public int GetQueueSize() => downloadQueue.Count;
-    public bool IsPlayerIdle() => isPlayerIdle;
-    public int GetCurrentDownloads() => currentDownloads;
+    #endregion
+
+    #region Refresh & Update
+
+    /// <summary>
+    /// Refresh một frame - kiểm tra hash và reload nếu cần
+    /// </summary>
+    public void RefreshFrame(int frameId, Action<Sprite, ImageData> callback)
+    {
+        APIManager.Instance.GetImageByFrame(frameId, (success, data, error) =>
+        {
+            if (!success || data == null)
+            {
+                callback?.Invoke(null, null);
+                return;
+            }
+
+            // Kiểm tra hash
+            bool needsReload = false;
+
+            if (imageHashCache.ContainsKey(frameId))
+            {
+                if (imageHashCache[frameId] != data.hash)
+                {
+                    needsReload = true;
+                    if (showDebug)
+                        Debug.Log($"[ArtManager] Hash changed for frame {frameId}, reloading...");
+                }
+            }
+            else
+            {
+                needsReload = true;
+            }
+
+            if (needsReload)
+            {
+                // Xóa cache cũ
+                ClearFrameCache(frameId);
+                
+                // Load lại
+                LoadImage(frameId, callback);
+            }
+            else
+            {
+                // Dùng cache
+                callback?.Invoke(GetCachedSprite(frameId), data);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Refresh tất cả frames
+    /// </summary>
+    public void RefreshAllFrames(Action onComplete = null)
+    {
+        StartCoroutine(RefreshAllFramesCoroutine(onComplete));
+    }
+
+    private IEnumerator RefreshAllFramesCoroutine(Action onComplete)
+    {
+        // Lấy danh sách tất cả frames
+        bool completed = false;
+        List<ImageData> allImages = null;
+
+        APIManager.Instance.GetAllImages((success, images, error) =>
+        {
+            completed = true;
+            if (success)
+                allImages = images;
+        });
+
+        yield return new WaitUntil(() => completed);
+
+        if (allImages != null)
+        {
+            foreach (var imageData in allImages)
+            {
+                RefreshFrame(imageData.frameUse, null);
+                yield return new WaitForSeconds(downloadDelay);
+            }
+        }
+
+        onComplete?.Invoke();
+    }
+
+    #endregion
+
+    #region Status Queries
+
+    /// <summary>
+    /// Kiểm tra xem frame có đang load không
+    /// </summary>
+    public bool IsImageLoading(int frameId)
+    {
+        return currentlyLoading.Contains(frameId) || downloadQueue.Contains(frameId);
+    }
+
+    /// <summary>
+    /// Lấy số lượng frame đang load
+    /// </summary>
+    public int GetLoadingCount()
+    {
+        return currentlyLoading.Count;
+    }
+
+    /// <summary>
+    /// Lấy số lượng frame trong queue
+    /// </summary>
+    public int GetQueueCount()
+    {
+        return downloadQueue.Count;
+    }
+
+    /// <summary>
+    /// Lấy số lượng frame trong cache
+    /// </summary>
+    public int GetCacheCount()
+    {
+        return spriteCache.Count;
+    }
+
+    /// <summary>
+    /// Kiểm tra player có đang idle không
+    /// </summary>
+    private bool IsPlayerIdle()
+    {
+        return Time.time - lastMovementTime > 1f;
+    }
+
+    #endregion
+
+    #region Cleanup
+
+    private void OnDestroy()
+    {
+        ClearAllCache();
+    }
+
+    #endregion
 }
