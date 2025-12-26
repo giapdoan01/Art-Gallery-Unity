@@ -34,11 +34,15 @@ public class TransformEditPopup : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool showDebug = true;
 
+    [Header("Gizmo Integration")]
+    [SerializeField] private bool enableGizmo = true;
+    [SerializeField] private RuntimeTransformGizmo gizmo;
+
     // Data storage
     private int currentFrameId;
     private ImageData currentImageData;
     private ArtFrame targetArtFrame;
-    
+
     // Transform tracking
     private Vector3 originalPosition;
     private Vector3 originalRotation;
@@ -50,6 +54,9 @@ public class TransformEditPopup : MonoBehaviour
     private float nextUpdateTime;
     private PlayerController[] playerControllers;
     private System.Action onHideCallback;
+
+    // Cờ để tránh cập nhật realtime khi đang khởi tạo
+    private bool isPopulating = false;
 
     #region Unity Lifecycle
 
@@ -186,12 +193,33 @@ public class TransformEditPopup : MonoBehaviour
             popupPanel.SetActive(true);
         }
 
+        // ✅ GET GIZMO COMPONENT
+        RuntimeTransformGizmo gizmo = artFrame.GetComponent<RuntimeTransformGizmo>();
+
+        if (gizmo != null)
+        {
+            Debug.Log($"[TransformEditPopup] ✅ Found gizmo component on {artFrame.gameObject.name}");
+
+            // ✅ SUBSCRIBE TO EVENTS
+            gizmo.OnTransformChanged += OnGizmoTransformChanged;
+            Debug.Log($"[TransformEditPopup] ✅ Subscribed to gizmo events");
+
+            // ✅ ACTIVATE GIZMO (QUAN TRỌNG!)
+            gizmo.Activate();
+            Debug.Log($"[TransformEditPopup] ✅ Gizmo activated");
+        }
+        else
+        {
+            Debug.LogError($"[TransformEditPopup] ❌ Gizmo component NOT FOUND on {artFrame.gameObject.name}!");
+        }
+
         // Disable player controllers
         DisablePlayerControllers();
 
         if (showDebug)
             Debug.Log($"[TransformEditPopup] Showing for frame {currentFrameId}");
     }
+
 
     /// <summary>
     /// Ẩn popup
@@ -201,6 +229,20 @@ public class TransformEditPopup : MonoBehaviour
         if (popupPanel != null)
         {
             popupPanel.SetActive(false);
+        }
+
+        // ✅ Deactivate gizmo và unsubscribe
+        if (targetArtFrame != null)
+        {
+            RuntimeTransformGizmo gizmo = targetArtFrame.GetComponent<RuntimeTransformGizmo>();
+            if (gizmo != null)
+            {
+                gizmo.OnTransformChanged -= OnGizmoTransformChanged;
+                gizmo.Deactivate();
+
+                if (showDebug)
+                    Debug.Log($"[TransformEditPopup] ✅ Gizmo deactivated and unsubscribed");
+            }
         }
 
         // Enable player controllers
@@ -228,6 +270,9 @@ public class TransformEditPopup : MonoBehaviour
 
     private void PopulateUI()
     {
+        // Đặt cờ để tránh cập nhật transform khi khởi tạo
+        isPopulating = true;
+
         // Set frame ID (read-only)
         if (frameIdInput != null)
         {
@@ -243,6 +288,9 @@ public class TransformEditPopup : MonoBehaviour
         // Reset changes flag
         hasChanges = false;
         UpdateSaveButtonState(false);
+
+        // Tắt cờ để cho phép cập nhật transform
+        isPopulating = false;
     }
 
     private void UpdateInputFieldsFromTransform(Vector3 position, Vector3 rotation)
@@ -265,6 +313,10 @@ public class TransformEditPopup : MonoBehaviour
     private void OnPositionInputChanged(string value)
     {
         if (posXInput == null || posYInput == null || posZInput == null || targetArtFrame == null)
+            return;
+
+        // Không xử lý khi đang khởi tạo giá trị
+        if (isPopulating)
             return;
 
         // Try to parse all position values
@@ -295,6 +347,10 @@ public class TransformEditPopup : MonoBehaviour
     private void OnRotationInputChanged(string value)
     {
         if (rotXInput == null || rotYInput == null || rotZInput == null || targetArtFrame == null)
+            return;
+
+        // Không xử lý khi đang khởi tạo giá trị
+        if (isPopulating)
             return;
 
         // Try to parse all rotation values
@@ -386,6 +442,9 @@ public class TransformEditPopup : MonoBehaviour
         if (targetArtFrame == null)
             return;
 
+        // Đặt cờ để tránh cập nhật transform khi đặt lại giá trị
+        isPopulating = true;
+
         // Reset to original transform
         targetArtFrame.transform.position = originalPosition;
         targetArtFrame.transform.eulerAngles = originalRotation;
@@ -397,6 +456,9 @@ public class TransformEditPopup : MonoBehaviour
 
         // Reset changes flag
         UpdateSaveButtonState(false);
+
+        // Tắt cờ để cho phép cập nhật transform
+        isPopulating = false;
 
         UpdateStatus("Reset to original transform");
 
@@ -508,4 +570,28 @@ public class TransformEditPopup : MonoBehaviour
     }
 
     #endregion
+    private void OnGizmoTransformChanged(Vector3 position, Vector3 rotation)
+    {
+        // Đặt cờ để tránh trigger input change events
+        isPopulating = true;
+
+        // Update new values
+        newPosition = position;
+        newRotation = rotation;
+
+        // Update input fields
+        UpdateInputFieldsFromTransform(position, rotation);
+
+        // Check for changes
+        bool positionChanged = Vector3.Distance(newPosition, originalPosition) > 0.001f;
+        bool rotationChanged = Vector3.Distance(newRotation, originalRotation) > 0.001f;
+
+        UpdateSaveButtonState(positionChanged || rotationChanged);
+
+        // Tắt cờ
+        isPopulating = false;
+
+        if (showDebug)
+            Debug.Log($"[TransformEditPopup] Gizmo changed transform - Pos: {position}, Rot: {rotation}");
+    }
 }

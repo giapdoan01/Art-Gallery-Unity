@@ -28,18 +28,24 @@ public class ImageEditPopup : MonoBehaviour
     [SerializeField] private TMP_InputField imageFileInput;
     [SerializeField] private TMP_InputField authorInput;
     [SerializeField] private TMP_InputField descriptionInput;
-    [SerializeField] private TMP_Dropdown imageTypeDropdown; // ✅ THÊM MỚI
+    [SerializeField] private TMP_Dropdown imageTypeDropdown; 
     [SerializeField] private Button browseButton;
     [SerializeField] private Button saveButton;
     [SerializeField] private Button cancelButton;
-    [SerializeField] private Button deleteButton; // Optional
+    [SerializeField] private Button deleteButton; 
     [SerializeField] private TextMeshProUGUI statusText;
-    [SerializeField] private Image previewImage; // Optional: preview ảnh được chọn
+    [SerializeField] private Image previewImage; 
 
     [Header("Image Settings")]
     [SerializeField] private int maxImageWidth = 2048;
     [SerializeField] private int maxImageHeight = 2048;
     [SerializeField] private int jpgQuality = 75;
+
+    [Header("Delete Confirmation")]
+    [SerializeField] private GameObject confirmationPanel;
+    [SerializeField] private Button confirmDeleteButton;
+    [SerializeField] private Button cancelDeleteButton;
+    [SerializeField] private TextMeshProUGUI confirmationText;
 
     [Header("Debug")]
     [SerializeField] private bool showDebug = true;
@@ -50,6 +56,9 @@ public class ImageEditPopup : MonoBehaviour
     private Texture2D selectedImageTexture;
     private ImageItem currentSelectedImageItem;
     private bool isNewFrame = false;
+    
+    // Thêm biến để lưu reference đến ArtFrame
+    private ArtFrame targetArtFrame;
 
     // Player controller management
     private PlayerController[] playerControllers;
@@ -89,8 +98,11 @@ public class ImageEditPopup : MonoBehaviour
         // Setup input fields
         SetupInputFields();
 
-        // ✅ Setup dropdown
+        // Setup dropdown
         SetupImageTypeDropdown();
+
+        // Setup confirmation panel
+        SetupConfirmationPanel();
 
         // Hide initially
         Hide();
@@ -154,7 +166,7 @@ public class ImageEditPopup : MonoBehaviour
     }
 
     /// <summary>
-    /// ✅ Setup dropdown với 2 options: "ngang" và "dọc"
+    /// Setup dropdown với 2 options: "ngang" và "dọc"
     /// </summary>
     private void SetupImageTypeDropdown()
     {
@@ -178,15 +190,34 @@ public class ImageEditPopup : MonoBehaviour
         if (showDebug)
             Debug.Log("[ImageEditPopup] Image type dropdown setup complete");
     }
+    
+    /// <summary>
+    /// Setup confirmation panel
+    /// </summary>
+    private void SetupConfirmationPanel()
+    {
+        if (confirmationPanel == null)
+            return;
+            
+        // Hide initially
+        confirmationPanel.SetActive(false);
+        
+        // Setup buttons
+        if (confirmDeleteButton != null)
+            confirmDeleteButton.onClick.AddListener(OnConfirmDeleteClicked);
+            
+        if (cancelDeleteButton != null)
+            cancelDeleteButton.onClick.AddListener(OnCancelDeleteClicked);
+    }
 
     #endregion
 
     #region Public Methods
 
     /// <summary>
-    /// Hiển thị popup với ImageData
+    /// Hiển thị popup với ImageData và ArtFrame (hoặc ImageItem)
     /// </summary>
-    public void Show(ImageData imageData, ImageItem sourceImageItem = null)
+    public void Show(ImageData imageData, ArtFrame artFrame = null, ImageItem sourceImageItem = null)
     {
         if (imageData == null)
         {
@@ -196,6 +227,8 @@ public class ImageEditPopup : MonoBehaviour
 
         currentImageData = imageData;
         currentSelectedImageItem = sourceImageItem;
+        targetArtFrame = artFrame; // Lưu lại reference đến ArtFrame
+        
         selectedImagePath = null;
         CleanupTextures();
 
@@ -213,7 +246,15 @@ public class ImageEditPopup : MonoBehaviour
         DisablePlayerControllers();
 
         if (showDebug)
-            Debug.Log($"[ImageEditPopup] Showing for frame {imageData.frameUse} (New: {isNewFrame})");
+            Debug.Log($"[ImageEditPopup] Showing for frame {imageData.frameUse} (New: {isNewFrame}, ArtFrame: {(artFrame != null ? "Yes" : "No")})");
+    }
+    
+    /// <summary>
+    /// Phương thức Show tương thích với code cũ
+    /// </summary>
+    public void Show(ImageData imageData, ImageItem sourceImageItem = null)
+    {
+        Show(imageData, null, sourceImageItem);
     }
 
     /// <summary>
@@ -223,10 +264,15 @@ public class ImageEditPopup : MonoBehaviour
     {
         if (popupPanel != null)
             popupPanel.SetActive(false);
+            
+        // Ẩn confirmation panel nếu đang hiển thị
+        if (confirmationPanel != null)
+            confirmationPanel.SetActive(false);
 
         // Cleanup
         CleanupTextures();
         selectedImagePath = null;
+        targetArtFrame = null;
 
         // Enable player controllers
         EnablePlayerControllers();
@@ -286,7 +332,6 @@ public class ImageEditPopup : MonoBehaviour
         if (descriptionInput != null)
             descriptionInput.text = currentImageData.description ?? "";
 
-        // ✅ Image Type - THÊM DEBUG
         if (showDebug)
         {
             Debug.Log($"[ImageEditPopup] PopulateUI - ImageData.imageType: '{currentImageData.imageType}'");
@@ -308,7 +353,7 @@ public class ImageEditPopup : MonoBehaviour
     }
 
     /// <summary>
-    /// ✅ Set giá trị dropdown từ imageType
+    /// Set giá trị dropdown từ imageType
     /// </summary>
     private void SetImageTypeDropdown(string imageType)
     {
@@ -328,13 +373,13 @@ public class ImageEditPopup : MonoBehaviour
             return;
         }
 
-        // ✅ Normalize và trim
+        // Normalize và trim
         string normalizedType = imageType.Trim().ToLower();
 
         if (showDebug)
             Debug.Log($"[ImageEditPopup] Setting dropdown for imageType: '{imageType}' (normalized: '{normalizedType}')");
 
-        // ✅ So sánh với nhiều biến thể
+        // So sánh với nhiều biến thể
         if (normalizedType == "landscape" ||
             normalizedType == "ngang" ||
             normalizedType.Contains("ngang") ||
@@ -366,7 +411,7 @@ public class ImageEditPopup : MonoBehaviour
                 Debug.LogWarning($"[ImageEditPopup] Unknown imageType: '{imageType}', defaulting to ngang");
         }
 
-        // ✅ Verify selection
+        // Verify selection
         if (showDebug)
         {
             string selectedText = imageTypeDropdown.options[imageTypeDropdown.value].text;
@@ -375,7 +420,7 @@ public class ImageEditPopup : MonoBehaviour
     }
 
     /// <summary>
-    /// ✅ Lấy giá trị imageType từ dropdown
+    /// Lấy giá trị imageType từ dropdown
     /// </summary>
     private string GetSelectedImageType()
     {
@@ -469,25 +514,38 @@ public class ImageEditPopup : MonoBehaviour
         // Get transform from ArtFrame
         Vector3 position = Vector3.zero;
         Vector3 rotation = Vector3.zero;
-        ArtFrame targetFrame = FindArtFrameByFrameId(currentImageData.frameUse);
-
-        if (targetFrame != null)
+        
+        // Ưu tiên lấy từ targetArtFrame
+        if (targetArtFrame != null)
         {
-            position = targetFrame.transform.position;
-            rotation = targetFrame.transform.eulerAngles;
+            position = targetArtFrame.transform.position;
+            rotation = targetArtFrame.transform.eulerAngles;
 
             if (showDebug)
-                Debug.Log($"[ImageEditPopup] Using transform from frame: Pos={position}, Rot={rotation}");
+                Debug.Log($"[ImageEditPopup] Using transform from targetArtFrame: Pos={position}, Rot={rotation}");
         }
-        else
+        // Nếu không có targetArtFrame, tìm ArtFrame với frameId tương ứng
+        else 
         {
-            Debug.LogWarning($"[ImageEditPopup] Frame {currentImageData.frameUse} not found, using default transform");
+            ArtFrame frameInScene = FindArtFrameByFrameId(currentImageData.frameUse);
+            if (frameInScene != null)
+            {
+                position = frameInScene.transform.position;
+                rotation = frameInScene.transform.eulerAngles;
+
+                if (showDebug)
+                    Debug.Log($"[ImageEditPopup] Using transform from found frame: Pos={position}, Rot={rotation}");
+            }
+            else
+            {
+                Debug.LogWarning($"[ImageEditPopup] Frame {currentImageData.frameUse} not found, using default transform");
+            }
         }
 
         // Prepare data
         string author = authorInput != null ? authorInput.text.Trim() : "";
         string description = descriptionInput != null ? descriptionInput.text.Trim() : "";
-        string imageType = GetSelectedImageType(); // ✅ Lấy từ dropdown
+        string imageType = GetSelectedImageType();
 
         // Create ImageData object
         ImageData dataToSend = new ImageData
@@ -496,7 +554,7 @@ public class ImageEditPopup : MonoBehaviour
             name = newName,
             author = author,
             description = description,
-            imageType = imageType, // ✅ Thêm imageType
+            imageType = imageType,
             position = new Position { x = position.x, y = position.y, z = position.z },
             rotation = new Rotation { x = rotation.x, y = rotation.y, z = rotation.z }
         };
@@ -555,20 +613,69 @@ public class ImageEditPopup : MonoBehaviour
         if (showDebug)
             Debug.Log($"[ImageEditPopup] Delete clicked for frame {currentImageData.frameUse}");
 
-        // Confirm deletion
-        if (!ConfirmDelete())
-            return;
-
-        UpdateStatus("Deleting...");
-
-        APIManager.Instance.DeleteImage(currentImageData.frameUse, OnDeleteComplete);
+        // Hiển thị hộp thoại xác nhận
+        ShowDeleteConfirmation();
     }
-
-    private bool ConfirmDelete()
+    
+    /// <summary>
+    /// Hiển thị hộp thoại xác nhận xóa
+    /// </summary>
+    private void ShowDeleteConfirmation()
     {
-        // TODO: Show confirmation dialog
-        // For now, just return true
-        return true;
+        if (confirmationPanel == null)
+        {
+            // Không có hộp thoại xác nhận, xóa luôn
+            PerformDelete();
+            return;
+        }
+        
+        // Thiết lập nội dung xác nhận
+        if (confirmationText != null)
+        {
+            confirmationText.text = $"Bạn có chắc chắn muốn xóa ảnh này (Frame ID: {currentImageData.frameUse})?\n" +
+                                    "Thao tác này không thể hoàn tác.";
+        }
+        
+        // Hiển thị panel xác nhận
+        confirmationPanel.SetActive(true);
+    }
+    
+    /// <summary>
+    /// Handler cho nút xác nhận xóa
+    /// </summary>
+    private void OnConfirmDeleteClicked()
+    {
+        // Ẩn panel xác nhận
+        if (confirmationPanel != null)
+            confirmationPanel.SetActive(false);
+            
+        // Thực hiện xóa
+        PerformDelete();
+    }
+    
+    /// <summary>
+    /// Handler cho nút hủy xóa
+    /// </summary>
+    private void OnCancelDeleteClicked()
+    {
+        // Chỉ ẩn panel xác nhận
+        if (confirmationPanel != null)
+            confirmationPanel.SetActive(false);
+            
+        UpdateStatus("Delete canceled");
+    }
+    
+    /// <summary>
+    /// Thực hiện xóa ảnh
+    /// </summary>
+    private void PerformDelete()
+    {
+        UpdateStatus("Deleting...");
+        
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Deleting frame {currentImageData.frameUse}");
+            
+        APIManager.Instance.DeleteImage(currentImageData.frameUse, OnDeleteComplete);
     }
 
     #endregion
@@ -798,7 +905,7 @@ public class ImageEditPopup : MonoBehaviour
             }
 
             // Refresh gallery
-            var gallery = FindAnyObjectByType<ImageGalleryContainer>();
+            var gallery = FindObjectOfType<ImageGalleryContainer>();
             if (gallery != null)
             {
                 gallery.RefreshGallery();
@@ -851,14 +958,25 @@ public class ImageEditPopup : MonoBehaviour
             }
 
             // Refresh gallery
-            var gallery = FindAnyObjectByType<ImageGalleryContainer>();
+            var gallery = FindObjectOfType<ImageGalleryContainer>();
             if (gallery != null)
             {
                 gallery.RefreshGallery();
             }
 
-            // Clear all ArtFrames with this ID
-            ClearAllArtFrames(currentImageData.frameUse);
+            // Nếu có reference đến ArtFrame cụ thể, xóa GameObject đó
+            if (targetArtFrame != null)
+            {
+                if (showDebug)
+                    Debug.Log($"[ImageEditPopup] Destroying ArtFrame GameObject: {targetArtFrame.gameObject.name}");
+                
+                Destroy(targetArtFrame.gameObject);
+            }
+            else
+            {
+                // Nếu không có reference cụ thể, xóa tất cả ArtFrame có frameId này
+                DestroyAllArtFrames(currentImageData.frameUse);
+            }
 
             // Close popup after delay
             Invoke(nameof(Hide), 1f);
@@ -876,7 +994,7 @@ public class ImageEditPopup : MonoBehaviour
 
     private ArtFrame FindArtFrameByFrameId(int frameId)
     {
-        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+        ArtFrame[] allFrames = FindObjectsOfType<ArtFrame>();
         foreach (var frame in allFrames)
         {
             if (frame != null && frame.FrameId == frameId)
@@ -887,7 +1005,7 @@ public class ImageEditPopup : MonoBehaviour
 
     private void RefreshAllArtFrames(int frameId)
     {
-        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+        ArtFrame[] allFrames = FindObjectsOfType<ArtFrame>();
         int count = 0;
 
         foreach (ArtFrame frame in allFrames)
@@ -903,9 +1021,12 @@ public class ImageEditPopup : MonoBehaviour
             Debug.Log($"[ImageEditPopup] Refreshed {count} ArtFrame(s) with ID {frameId}");
     }
 
+    /// <summary>
+    /// Xóa nội dung của tất cả ArtFrame có ID tương ứng
+    /// </summary>
     private void ClearAllArtFrames(int frameId)
     {
-        ArtFrame[] allFrames = FindObjectsByType<ArtFrame>(FindObjectsSortMode.None);
+        ArtFrame[] allFrames = FindObjectsOfType<ArtFrame>();
         int count = 0;
 
         foreach (ArtFrame frame in allFrames)
@@ -920,6 +1041,30 @@ public class ImageEditPopup : MonoBehaviour
         if (showDebug)
             Debug.Log($"[ImageEditPopup] Cleared {count} ArtFrame(s) with ID {frameId}");
     }
+    
+    /// <summary>
+    /// Xóa tất cả GameObject ArtFrame có ID tương ứng
+    /// </summary>
+    private void DestroyAllArtFrames(int frameId)
+    {
+        ArtFrame[] allFrames = FindObjectsOfType<ArtFrame>();
+        int count = 0;
+
+        foreach (ArtFrame frame in allFrames)
+        {
+            if (frame != null && frame.FrameId == frameId)
+            {
+                if (showDebug)
+                    Debug.Log($"[ImageEditPopup] Destroying ArtFrame: {frame.gameObject.name}");
+                
+                Destroy(frame.gameObject);
+                count++;
+            }
+        }
+
+        if (showDebug)
+            Debug.Log($"[ImageEditPopup] Destroyed {count} ArtFrame(s) with ID {frameId}");
+    }
 
     #endregion
 
@@ -927,7 +1072,8 @@ public class ImageEditPopup : MonoBehaviour
 
     private void DisablePlayerControllers()
     {
-        playerControllers = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
+        playerControllers = FindObjectsOfType<PlayerController>();
+
         foreach (var controller in playerControllers)
         {
             if (controller != null && controller.enabled)
@@ -969,7 +1115,7 @@ public class ImageEditPopup : MonoBehaviour
             currentSelectedImageItem = null;
         }
 
-        ImageItem[] allImageItems = FindObjectsByType<ImageItem>(FindObjectsSortMode.None);
+        ImageItem[] allImageItems = FindObjectsOfType<ImageItem>();
         foreach (var item in allImageItems)
         {
             if (item != null && item.IsSelected())

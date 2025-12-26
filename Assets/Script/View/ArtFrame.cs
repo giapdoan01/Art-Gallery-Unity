@@ -22,8 +22,8 @@ public class ArtFrame : MonoBehaviour
     [SerializeField] private Transform cubeFrame;
 
     [Header("Frame Types - Assign Both")]
-    [SerializeField] private Transform landscapeFrame; // ✅ Khung ngang (KHÔNG scale)
-    [SerializeField] private Transform portraitFrame;  // ✅ Khung dọc (KHÔNG scale)
+    [SerializeField] private Transform landscapeFrame;
+    [SerializeField] private Transform portraitFrame;
 
     [Header("Loading")]
     [SerializeField] private Texture2D loadingTexture;
@@ -35,7 +35,7 @@ public class ArtFrame : MonoBehaviour
     [Header("Quad Resize Settings")]
     [Tooltip("Khi resize, giữ nguyên chiều ngang của quad cho ảnh dọc")]
     [SerializeField] private bool useQuadOriginalSize = true;
-    
+
     [Header("Manual Override (nếu không dùng original size)")]
     [SerializeField] private float landscapeFixedHeight = 2f; // Cho ảnh ngang
     [SerializeField] private float portraitFixedWidth = 1.5f; // Cho ảnh dọc
@@ -56,6 +56,10 @@ public class ArtFrame : MonoBehaviour
     [SerializeField] private Button transformButton;
     [SerializeField] private float buttonDisplayDistance = 5f;
 
+    [Header("Runtime Gizmo")]
+    [SerializeField] private RuntimeTransformGizmo gizmo;
+
+
     [Header("Debug")]
     [SerializeField] private bool showDebug = false;
 
@@ -71,7 +75,7 @@ public class ArtFrame : MonoBehaviour
     private Camera mainCamera;
     private bool isLoading = false;
     private string currentFrameType = ""; // ✅ "ngang" hoặc "dọc"
-    
+
     // ✅ Lưu kích thước ban đầu của quad từ prefab
     private Vector3 quadOriginalScale;
     private bool hasStoredOriginalScale = false;
@@ -438,6 +442,32 @@ public class ArtFrame : MonoBehaviour
 
         // Show loading texture
         ShowLoadingTexture();
+    }
+    private void OnMouseDown()
+    {
+        if (EventSystem.current.IsPointerOverGameObject())
+            return;
+
+        if (currentImageData == null)
+        {
+            if (showDebug)
+                Debug.Log($"[ArtFrame] No image data to edit for frame {frameId}");
+            return;
+        }
+
+        if (showDebug)
+            Debug.Log($"[ArtFrame] Clicked on frame {frameId}, opening edit popup");
+
+
+        // Show popup
+        TransformEditPopup.Instance.Show(currentImageData, this);
+    }
+    public void DeactivateGizmo()
+    {
+        if (gizmo != null)
+        {
+            gizmo.Deactivate();
+        }
     }
 
     /// <summary>
@@ -951,7 +981,8 @@ public class ArtFrame : MonoBehaviour
     {
         if (ImageEditPopup.Instance != null)
         {
-            ImageEditPopup.Instance.Show(data, null);
+            // Truyền this để ImageEditPopup có reference đến ArtFrame hiện tại
+            ImageEditPopup.Instance.Show(data, this);
         }
         else
         {

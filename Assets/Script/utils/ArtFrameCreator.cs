@@ -11,10 +11,10 @@ public class ArtFrameCreator : MonoBehaviour
 
     [Header("Settings")]
     [SerializeField] private float spawnDistance = 2f;
-    [SerializeField] private float heightOffset = 2f; // Chiều cao so với mặt đất
-    
+    [SerializeField] private float heightOffset = 2f;
+
     [Header("Frame Size")]
-    [SerializeField] private bool useCustomScale = false; // Thêm flag để kiểm soát việc sử dụng scale tùy chỉnh
+    [SerializeField] private bool useCustomScale = false;
     [SerializeField] private Vector3 frameSize = new Vector3(1.5f, 1f, 0.1f);
 
     [Header("References")]
@@ -143,7 +143,7 @@ public class ArtFrameCreator : MonoBehaviour
     }
 
     /// <summary>
-    /// Lấy ID tiếp theo cho frame mới
+    /// Lấy ID tiếp theo cho frame mới (tìm ID nhỏ nhất chưa được sử dụng)
     /// </summary>
     private void GetNextAvailableFrameId(System.Action<bool, int> callback)
     {
@@ -158,23 +158,30 @@ public class ArtFrameCreator : MonoBehaviour
         {
             if (success && frames != null)
             {
+                // Tạo danh sách các ID đã được sử dụng
+                HashSet<int> usedIds = new HashSet<int>();
                 int maxFrameId = 0;
 
-                // Tìm frame ID lớn nhất
+                // Thu thập tất cả ID đã được sử dụng
                 foreach (var frame in frames)
                 {
+                    usedIds.Add(frame.frameUse);
                     if (frame.frameUse > maxFrameId)
                     {
                         maxFrameId = frame.frameUse;
                     }
                 }
 
-                // Frame ID tiếp theo = max + 1
-                int nextId = maxFrameId + 1;
+                // Tìm ID nhỏ nhất chưa được sử dụng, bắt đầu từ 1
+                int nextId = 1;
+                while (usedIds.Contains(nextId))
+                {
+                    nextId++;
+                }
 
                 if (showDebug)
                 {
-                    Debug.Log($"[ArtFrameCreator] Frame ID lớn nhất: {maxFrameId}, ID tiếp theo: {nextId}");
+                    Debug.Log($"[ArtFrameCreator] Frame ID lớn nhất: {maxFrameId}, ID nhỏ nhất chưa sử dụng: {nextId}");
                 }
 
                 callback?.Invoke(true, nextId);
@@ -213,7 +220,7 @@ public class ArtFrameCreator : MonoBehaviour
         if (useCustomScale)
         {
             if (showDebug) Debug.Log($"[ArtFrameCreator] Đang sử dụng scale tùy chỉnh: {frameSize}");
-            
+
             if (newFrame.transform.Find("CubeFrame") is Transform cubeFrame)
             {
                 cubeFrame.localScale = frameSize;
@@ -320,7 +327,10 @@ public class ArtFrameCreator : MonoBehaviour
                 }
             });
 
-            ImageEditPopup.Instance.Show(newImageData);
+            // Lấy ArtFrame component từ frame vừa tạo
+            ArtFrame newArtFrame = GetLastCreatedFrame();
+            // Sửa lời gọi để truyền rõ ArtFrame
+            ImageEditPopup.Instance.Show(newImageData, newArtFrame);
         }
         else
         {
@@ -381,7 +391,7 @@ public class ArtFrameCreator : MonoBehaviour
             }
         }
     }
-    
+
     /// <summary>
     /// Lấy ArtFrame component của frame mới nhất được tạo
     /// </summary>

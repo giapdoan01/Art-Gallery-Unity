@@ -1342,6 +1342,7 @@ GameObject:
   - component: {fileID: 7887185773751184316}
   - component: {fileID: 5850450917859391700}
   - component: {fileID: 8343192880503566060}
+  - component: {fileID: 6815139861210176137}
   m_Layer: 0
   m_Name: ArtFrame
   m_TagString: Untagged
@@ -1452,4 +1453,35 @@ MonoBehaviour:
   infoButton: {fileID: 1561931518477453879}
   transformButton: {fileID: 4129195356319663361}
   buttonDisplayDistance: 5
+  gizmo: {fileID: 6815139861210176137}
   showDebug: 0
+--- !u!114 &6815139861210176137
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8636943494168325019}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e0e782962482ef4ea515bf925c9bcbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RuntimeTransformGizmo
+  gizmoSize: 1
+  lineWidth: 0.05
+  arrowSize: 2
+  hoverRadius: 0.1
+  scaleWithDistance: 0
+  xAxisColor: {r: 1, g: 0.2, b: 0.2, a: 0.8}
+  yAxisColor: {r: 0.2, g: 1, b: 0.2, a: 0.8}
+  zAxisColor: {r: 0.2, g: 0.2, b: 1, a: 0.8}
+  selectedColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  hoverColor: {r: 1, g: 1, b: 1, a: 1}
+  dragSensitivity: 1
+  rotateSensitivity: 180
+  snapEnabled: 0
+  moveSnapValue: 0.5
+  rotateSnapValue: 15
+  renderCamera: {fileID: 0}
+  lineMaterial: {fileID: 0}
+  showDebug: 1
