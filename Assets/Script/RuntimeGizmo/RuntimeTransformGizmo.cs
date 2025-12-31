@@ -37,7 +37,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
 
     // State
     private TransformMode currentMode = TransformMode.Move;
-    private TransformSpace currentSpace = TransformSpace.World;
+    private TransformSpace currentSpace = TransformSpace.Local;
     private GizmoAxis hoveredAxis = GizmoAxis.None;
     private GizmoAxis selectedAxis = GizmoAxis.None;
     private bool isDragging = false;
@@ -217,7 +217,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
         yAxisLine.SetPosition(1, yEnd);
 
         // ✅ Z axis (Blue) - Back (hướng ra sau, như Unity Editor)
-        Vector3 zEnd = origin + rotation * (-Vector3.forward) * size;
+        Vector3 zEnd = origin + rotation * Vector3.forward * size;
         zAxisLine.SetPosition(0, origin);
         zAxisLine.SetPosition(1, zEnd);
     }
@@ -500,7 +500,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
         }
 
         // ✅ Check Z axis - Dùng -Vector3.forward (cùng với UpdateLinePositions)
-        float screenDistZ = GetScreenDistanceToAxis(ray, origin, rotation * (-Vector3.forward), size);
+        float screenDistZ = GetScreenDistanceToAxis(ray, origin, rotation * Vector3.forward, size);
         if (screenDistZ < screenHoverRadius && screenDistZ < closestScreenDistance)
         {
             closestScreenDistance = screenDistZ;

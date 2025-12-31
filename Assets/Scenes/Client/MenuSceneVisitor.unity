@@ -1055,7 +1055,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RPMMenuController
   view: {fileID: 486551115}
-  animatorController: {fileID: 9100000, guid: 04b39a0eb7fa02b4db1e7831cb0416c7, type: 2}
+  animatorController: {fileID: 9100000, guid: bea63b6083163f247878bb28fe8da8be, type: 2}
 --- !u!114 &486551115
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2431,7 +2431,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: serverUrl
-      value: wss://gallery-server-mutilplayer.onrender.com
+      value: wss://gallery-server-production-bc94.up.railway.app
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: showDebug

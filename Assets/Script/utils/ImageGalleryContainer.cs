@@ -44,7 +44,7 @@ public class ImageGalleryContainer : MonoBehaviour
         ShowLoading(true);
         UpdateStatus("Loading images...");
 
-        APIManager.Instance.GetAllImages((success, images, error) =>
+        APIArtManager.Instance.GetAllImages((success, images, error) =>
         {
             ShowLoading(false);
 

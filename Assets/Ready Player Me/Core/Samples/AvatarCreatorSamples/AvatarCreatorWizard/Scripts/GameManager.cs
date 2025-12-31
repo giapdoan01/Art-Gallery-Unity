@@ -8,7 +8,6 @@ namespace ReadyPlayerMe.Samples.AvatarCreatorWizard
     {
         [SerializeField] private AvatarCreatorStateMachine avatarCreatorStateMachine;
         [SerializeField] private AvatarConfig inGameConfig;
-        [SerializeField] private string menuSceneName = "MenuSceneAdmin";
 
         private AvatarObjectLoader avatarObjectLoader;
 
@@ -37,10 +36,6 @@ namespace ReadyPlayerMe.Samples.AvatarCreatorWizard
             };
 
             avatarObjectLoader.LoadAvatar($"{Env.RPM_MODELS_BASE_URL}/{avatarId}.glb");
-        }
-        public void BackToMenuScene()
-        {
-            UnityEngine.SceneManagement.SceneManager.LoadScene(menuSceneName);
         }
     }
 }

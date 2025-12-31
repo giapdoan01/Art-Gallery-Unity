@@ -28,11 +28,9 @@ public class ImageData
     public string author;
     public string description;
 
-    // Thay đổi: Định nghĩa position và rotation theo cấu trúc từ server
     public Position position;
     public Rotation rotation;
 
-    // Thêm các properties để tương thích với code cũ
     public float positionX { get { return position != null ? position.x : 0; } }
     public float positionY { get { return position != null ? position.y : 0; } }
     public float positionZ { get { return position != null ? position.z : 0; } }
@@ -41,7 +39,6 @@ public class ImageData
     public float rotationZ { get { return rotation != null ? rotation.z : 0; } }
 }
 
-// Các class này đã có trong code, chỉ cần đảm bảo chúng được định nghĩa đúng
 [Serializable]
 public class Position
 {
@@ -94,8 +91,8 @@ public class ArtManager : MonoBehaviour
     [SerializeField] private bool onlyRefreshWhenIdle = true;
 
     [Header("Background Loading")]
-    [SerializeField] private bool useBackgroundLoading = true;
-    [SerializeField] private float maxLoadTimePerFrame = 0.016f; // Max 16ms/frame
+    [SerializeField] private bool useBackgroundLoading = false; // ✅ ĐỔI THÀNH FALSE
+    [SerializeField] private float maxLoadTimePerFrame = 0.016f;
 
     [Header("Player Detection")]
     [SerializeField] private Transform playerTransform;
@@ -103,13 +100,13 @@ public class ArtManager : MonoBehaviour
 
     [Header("Cache Settings")]
     [SerializeField] private bool enableCache = true;
-    [SerializeField] private int maxCacheSize = 50; // Số lượng ảnh tối đa trong cache
-    [SerializeField] private float cacheCleanupInterval = 60f; // Dọn cache mỗi 60s
+    [SerializeField] private int maxCacheSize = 50;
+    [SerializeField] private float cacheCleanupInterval = 60f;
 
     [Header("Debug")]
     [SerializeField] private bool showDebug = true;
 
-    // Cache - CHỈ ArtManager quản lý cache
+    // Cache
     private Dictionary<int, Sprite> spriteCache = new Dictionary<int, Sprite>();
     private Dictionary<int, Texture2D> textureCache = new Dictionary<int, Texture2D>();
     private Dictionary<int, ImageData> imageDataCache = new Dictionary<int, ImageData>();
@@ -170,9 +167,19 @@ public class ArtManager : MonoBehaviour
         if (playerTransform != null)
             lastPlayerPosition = playerTransform.position;
 
-        // Bắt đầu background loading
+        // ✅ CHỈ BẬT BACKGROUND LOADING NẾU useBackgroundLoading = true
         if (useBackgroundLoading)
+        {
+            if (showDebug)
+                Debug.Log("[ArtManager] Background loading ENABLED");
+            
             StartCoroutine(BackgroundLoadingCoroutine());
+        }
+        else
+        {
+            if (showDebug)
+                Debug.Log("[ArtManager] Background loading DISABLED");
+        }
 
         // Bắt đầu cache cleanup
         if (enableCache)
@@ -225,7 +232,17 @@ public class ArtManager : MonoBehaviour
             return;
         }
 
-        // Thêm vào queue để load
+        // ✅ NẾU BACKGROUND LOADING TẮT, LOAD NGAY LẬP TỨC
+        if (!useBackgroundLoading)
+        {
+            if (showDebug)
+                Debug.Log($"[ArtManager] Loading immediately (background loading disabled): Frame {frameId}");
+            
+            StartCoroutine(LoadFrameCoroutine(frameId));
+            return;
+        }
+
+        // ✅ NẾU BACKGROUND LOADING BẬT, THÊM VÀO QUEUE
         if (!downloadQueue.Contains(frameId))
         {
             downloadQueue.Enqueue(frameId);
@@ -268,10 +285,24 @@ public class ArtManager : MonoBehaviour
 
     #region Background Loading
 
+    /// <summary>
+    /// ✅ Background loading coroutine - CHỈ CHẠY NẾU useBackgroundLoading = true
+    /// </summary>
     private IEnumerator BackgroundLoadingCoroutine()
     {
+        if (showDebug)
+            Debug.Log("[ArtManager] Background loading coroutine started");
+
         while (true)
         {
+            // ✅ KIỂM TRA NẾU ĐÃ TẮT, DỪNG COROUTINE
+            if (!useBackgroundLoading)
+            {
+                if (showDebug)
+                    Debug.Log("[ArtManager] Background loading disabled, stopping coroutine");
+                yield break;
+            }
+
             // Chỉ load khi idle nếu setting bật
             if (onlyRefreshWhenIdle && !IsPlayerIdle())
             {
@@ -300,6 +331,9 @@ public class ArtManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// ✅ Load frame coroutine - KHÔNG THAY ĐỔI
+    /// </summary>
     private IEnumerator LoadFrameCoroutine(int frameId)
     {
         currentlyLoading.Add(frameId);
@@ -309,11 +343,11 @@ public class ArtManager : MonoBehaviour
         ImageData imageData = null;
         Sprite sprite = null;
 
-        // Bước 1: Lấy thông tin ảnh từ server qua APIManager
+        // Bước 1: Lấy thông tin ảnh từ server qua APIArtManager
         bool dataLoaded = false;
         string dataError = null;
 
-        APIManager.Instance.GetImageByFrame(frameId, (dataSuccess, data, error) =>
+        APIArtManager.Instance.GetImageByFrame(frameId, (dataSuccess, data, error) =>
         {
             dataLoaded = true;
             if (dataSuccess && data != null)
@@ -350,14 +384,14 @@ public class ArtManager : MonoBehaviour
             lastModifiedCache[frameId] = imageData.lastModified;
         }
 
-        // Bước 2: Tải texture từ URL qua APIManager
+        // Bước 2: Tải texture từ URL qua APIArtManager
         if (!string.IsNullOrEmpty(imageData.url))
         {
             bool textureLoaded = false;
             Texture2D texture = null;
             string textureError = null;
 
-            APIManager.Instance.DownloadTexture(imageData.url, (textureSuccess, tex, error) =>
+            APIArtManager.Instance.DownloadTexture(imageData.url, (textureSuccess, tex, error) =>
             {
                 textureLoaded = true;
                 if (textureSuccess && tex != null)
@@ -525,7 +559,6 @@ public class ArtManager : MonoBehaviour
 
             if (spriteCache.Count > maxCacheSize)
             {
-                // Sắp xếp theo thời gian truy cập
                 var sortedFrames = lastAccessTime.OrderBy(x => x.Value).ToList();
                 int toRemove = spriteCache.Count - maxCacheSize;
 
@@ -550,7 +583,7 @@ public class ArtManager : MonoBehaviour
     /// </summary>
     public void RefreshFrame(int frameId, Action<Sprite, ImageData> callback)
     {
-        APIManager.Instance.GetImageByFrame(frameId, (success, data, error) =>
+        APIArtManager.Instance.GetImageByFrame(frameId, (success, data, error) =>
         {
             if (!success || data == null)
             {
@@ -605,7 +638,7 @@ public class ArtManager : MonoBehaviour
         bool completed = false;
         List<ImageData> allImages = null;
 
-        APIManager.Instance.GetAllImages((success, images, error) =>
+        APIArtManager.Instance.GetAllImages((success, images, error) =>
         {
             completed = true;
             if (success)

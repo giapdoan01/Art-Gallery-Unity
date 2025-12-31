@@ -4452,6 +4452,10 @@ MonoBehaviour:
   maxImageWidth: 2048
   maxImageHeight: 2048
   jpgQuality: 75
+  confirmationPanel: {fileID: 0}
+  confirmDeleteButton: {fileID: 0}
+  cancelDeleteButton: {fileID: 0}
+  confirmationText: {fileID: 0}
   showDebug: 1
 --- !u!114 &719259061
 MonoBehaviour:
@@ -4605,6 +4609,8 @@ MonoBehaviour:
   loadFramesOnStart: 1
   loadDelay: 1
   showDebug: 1
+  useParallelLoading: 1
+  maxConcurrentLoads: 8
 --- !u!4 &730800285
 Transform:
   m_ObjectHideFlags: 0
@@ -7534,7 +7540,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SinglePlayerManager
   playerPrefab: {fileID: 2589951504050571358, guid: 39df78f695721e444a693b647f34a6a8, type: 3}
-  animatorController: {fileID: 9100000, guid: 04b39a0eb7fa02b4db1e7831cb0416c7, type: 2}
+  animatorController: {fileID: 9100000, guid: bea63b6083163f247878bb28fe8da8be, type: 2}
   spawnPoint: {fileID: 1699337395}
   loadDelayTime: 0.5
   showDebug: 1
@@ -9092,9 +9098,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87d810888c3a1814cb366d68fda68ae0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::APIManager
-  baseUrl: https://gallery-server-mutilplayer.onrender.com
-  apiUrl: https://gallery-server-mutilplayer.onrender.com/api
-  adminUrl: https://gallery-server-mutilplayer.onrender.com/admin
+  baseUrl: https://gallery-server-production-bc94.up.railway.app
+  apiUrl: https://gallery-server-production-bc94.up.railway.app/api
+  adminUrl: https://gallery-server-production-bc94.up.railway.app/admin
   requestTimeout: 10
   maxRetries: 3
   retryDelay: 2
@@ -11547,6 +11553,8 @@ MonoBehaviour:
   updateInRealtime: 1
   updateDelay: 0.1
   showDebug: 1
+  enableGizmo: 1
+  gizmo: {fileID: 0}
 --- !u!114 &1945030235
 MonoBehaviour:
   m_ObjectHideFlags: 0

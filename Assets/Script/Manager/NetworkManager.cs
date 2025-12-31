@@ -17,9 +17,9 @@ public class NetworkManager : MonoBehaviour
     [SerializeField] private string gallerySingleSceneName = "ArtGallerySingle";
     
     [Header("Sync Settings")]
-    [SerializeField] private float networkUpdateRate = 0.1f;  // Cập nhật mỗi 0.1 giây
-    [SerializeField] private float positionLerpSpeed = 10f;  // Tốc độ nội suy vị trí
-    [SerializeField] private float rotationLerpSpeed = 15f;  // Tốc độ nội suy góc quay
+    [SerializeField] private float networkUpdateRate = 0.1f; 
+    [SerializeField] private float positionLerpSpeed = 10f;  
+    [SerializeField] private float rotationLerpSpeed = 15f;  
 
     [Header("Debug")]
     [SerializeField] private bool showDebug = true;

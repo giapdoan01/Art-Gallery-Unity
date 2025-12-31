@@ -411,7 +411,7 @@ public class TransformEditPopup : MonoBehaviour
             saveButton.interactable = false;
 
         // Save transform to server via APIManager
-        APIManager.Instance.UpdateTransform(
+        APIArtManager.Instance.UpdateTransform(
             currentFrameId,
             newPosition,
             newRotation,

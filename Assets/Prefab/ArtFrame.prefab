@@ -366,7 +366,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 70.296104, y: 70.296104, z: 70.296104}
+  m_LocalScale: {x: 70.296104, y: 82.22536, z: 70.296104}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 7548104959907602824}
@@ -970,7 +970,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &5395902322020414393
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1436,7 +1436,7 @@ MonoBehaviour:
   landscapeFrame: {fileID: 5288478577808582388}
   portraitFrame: {fileID: 8281477284770041520}
   loadingTexture: {fileID: 0}
-  loadOnStart: 1
+  loadOnStart: 0
   autoResize: 1
   useQuadOriginalSize: 1
   landscapeFixedHeight: 2
@@ -1484,4 +1484,4 @@ MonoBehaviour:
   rotateSnapValue: 15
   renderCamera: {fileID: 0}
   lineMaterial: {fileID: 0}
-  showDebug: 1
+  showDebug: 0

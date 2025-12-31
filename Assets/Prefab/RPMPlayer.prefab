@@ -71,8 +71,8 @@ Animator:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2589951504050571358}
   m_Enabled: 1
-  m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: 04b39a0eb7fa02b4db1e7831cb0416c7, type: 2}
+  m_Avatar: {fileID: 9000000, guid: 89f358deabe746242a74281b3ca72caf, type: 3}
+  m_Controller: {fileID: 9100000, guid: bea63b6083163f247878bb28fe8da8be, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
@@ -110,7 +110,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 064e9804c4721824d8e6dd2bf99e3a14, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  moveSpeed: 3
+  moveSpeed: 2
   rotationSpeed: 8
   sendInterval: 0.1
   lerpSpeed: 10
@@ -127,8 +127,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RPMAvatarLoader
   loadOnStart: 0
-  defaultAvatarURL: https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb
-  animatorController: {fileID: 9100000, guid: 04b39a0eb7fa02b4db1e7831cb0416c7, type: 2}
+  defaultAvatarURL: https://models.readyplayer.me/6942207f4a15f239b0965d1f.glb
+  animatorController: {fileID: 9100000, guid: bea63b6083163f247878bb28fe8da8be, type: 2}
   showDebug: 1
 --- !u!1 &7332070304042813405
 GameObject:

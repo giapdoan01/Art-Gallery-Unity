@@ -147,14 +147,14 @@ public class ArtFrameCreator : MonoBehaviour
     /// </summary>
     private void GetNextAvailableFrameId(System.Action<bool, int> callback)
     {
-        if (APIManager.Instance == null)
+        if (APIArtManager.Instance == null)
         {
             Debug.LogError("[ArtFrameCreator] APIManager.Instance is null!");
             callback?.Invoke(false, 0);
             return;
         }
 
-        APIManager.Instance.GetAllFrames((success, frames, error) =>
+        APIArtManager.Instance.GetAllFrames((success, frames, error) =>
         {
             if (success && frames != null)
             {

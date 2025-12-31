@@ -1820,7 +1820,7 @@ MonoBehaviour:
   maxConcurrentDownloads: 1
   downloadDelay: 0.5
   onlyRefreshWhenIdle: 1
-  useBackgroundLoading: 1
+  useBackgroundLoading: 0
   maxLoadTimePerFrame: 0.016
   playerTransform: {fileID: 0}
   idleThreshold: 0.1
@@ -3823,6 +3823,56 @@ MonoBehaviour:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.RectMask2D
   m_Padding: {x: -8, y: -5, z: -8, w: -5}
   m_Softness: {x: 0, y: 0}
+--- !u!1 &536551857
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 536551859}
+  - component: {fileID: 536551858}
+  m_Layer: 0
+  m_Name: Model3DManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &536551858
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 536551857}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aa6e31aba48048e48a8e14d305fff488, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Model3DManager
+  maxConcurrentDownloads: 2
+  downloadDelay: 0.5
+  enableCache: 1
+  maxCacheSize: 20
+  cacheCleanupInterval: 120
+  showDebug: 1
+--- !u!4 &536551859
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 536551857}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 9.38515, y: 3.56731, z: -8.74566}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &539931714
 GameObject:
   m_ObjectHideFlags: 0
@@ -5201,7 +5251,9 @@ MonoBehaviour:
   artFramePrefab: {fileID: 8636943494168325019, guid: 4047c051e0e4e164fb61e66e8dc813bb, type: 3}
   loadFramesOnStart: 1
   loadDelay: 1
-  showDebug: 1
+  showDebug: 0
+  useParallelLoading: 1
+  maxConcurrentLoads: 8
 --- !u!4 &730800285
 Transform:
   m_ObjectHideFlags: 0
@@ -5431,7 +5483,7 @@ MonoBehaviour:
   useCustomScale: 0
   frameSize: {x: 1.5, y: 1, z: 0.1}
   galleryContainer: {fileID: 361344123}
-  showDebug: 1
+  showDebug: 0
 --- !u!4 &773610683
 Transform:
   m_ObjectHideFlags: 0
@@ -9279,6 +9331,59 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1320753509}
   m_CullTransparentMesh: 1
+--- !u!1 &1324437754
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1324437756}
+  - component: {fileID: 1324437755}
+  m_Layer: 0
+  m_Name: 3DmodelApiManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1324437755
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1324437754}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ce9f9a5eaff61a43abbec57eb710a12, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::API3DModelManager
+  baseUrl: https://gallery-server-production-bc94.up.railway.app
+  apiUrl: https://gallery-server-production-bc94.up.railway.app/api
+  adminUrl: https://gallery-server-production-bc94.up.railway.app/admin
+  requestTimeout: 30
+  maxRetries: 3
+  retryDelay: 2
+  logRequests: 1
+  logResponses: 1
+  logDetailedData: 1
+--- !u!4 &1324437756
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1324437754}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 42.77937, y: 4.8871, z: -8.75264}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1339910179
 GameObject:
   m_ObjectHideFlags: 0
@@ -10304,15 +10409,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87d810888c3a1814cb366d68fda68ae0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::APIManager
-  baseUrl: https://gallery-server-mutilplayer.onrender.com
-  apiUrl: https://gallery-server-mutilplayer.onrender.com/api
-  adminUrl: https://gallery-server-mutilplayer.onrender.com/admin
+  baseUrl: https://gallery-server-production-bc94.up.railway.app
+  apiUrl: https://gallery-server-production-bc94.up.railway.app/api
+  adminUrl: https://gallery-server-production-bc94.up.railway.app/admin
   requestTimeout: 10
   maxRetries: 3
   retryDelay: 2
-  logRequests: 1
-  logResponses: 1
-  logDetailedData: 1
+  logRequests: 0
+  logResponses: 0
+  logDetailedData: 0
 --- !u!4 &1501714357
 Transform:
   m_ObjectHideFlags: 0
@@ -14663,6 +14768,56 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2075980508}
   m_CullTransparentMesh: 1
+--- !u!1 &2114511657
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2114511659}
+  - component: {fileID: 2114511658}
+  m_Layer: 0
+  m_Name: Model3DPrefabManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2114511658
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2114511657}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 43a34547f38d85f4b93b5b068788aadc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Model3DLoader
+  model3DPrefab: {fileID: 5939856086031125098, guid: bdfa7cb0d3a9d2f42ac2afba1310afd0, type: 3}
+  loadModelsOnStart: 1
+  loadDelay: 1
+  showDebug: 1
+  useParallelLoading: 1
+  maxConcurrentLoads: 4
+--- !u!4 &2114511659
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2114511657}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.76527, y: 0.15, z: 2.07809}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2116673555
 GameObject:
   m_ObjectHideFlags: 0
@@ -22885,5 +23040,8 @@ SceneRoots:
   - {fileID: 67549072939876772}
   - {fileID: 217499295}
   - {fileID: 1501714357}
+  - {fileID: 1324437756}
+  - {fileID: 2114511659}
   - {fileID: 773610683}
   - {fileID: 730800285}
+  - {fileID: 536551859}

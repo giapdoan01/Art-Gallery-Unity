@@ -13,7 +13,7 @@ using UnityEditor;
 
 /// <summary>
 /// ImageEditPopup - Popup để tạo mới hoặc chỉnh sửa thông tin ảnh
-/// Sử dụng APIManager để create/update image
+/// Sử dụng APIArtManager để create/update image
 /// Sử dụng ArtManager để refresh cache sau khi update
 /// </summary>
 public class ImageEditPopup : MonoBehaviour
@@ -577,14 +577,14 @@ public class ImageEditPopup : MonoBehaviour
             if (showDebug)
                 Debug.Log($"[ImageEditPopup] Creating new image for frame {currentImageData.frameUse}");
 
-            APIManager.Instance.CreateImage(dataToSend, imageBytes, OnSaveComplete);
+            APIArtManager.Instance.CreateImage(dataToSend, imageBytes, OnSaveComplete);
         }
         else
         {
             if (showDebug)
                 Debug.Log($"[ImageEditPopup] Updating image for frame {currentImageData.frameUse}");
 
-            APIManager.Instance.UpdateImage(dataToSend, imageBytes, OnSaveComplete);
+            APIArtManager.Instance.UpdateImage(dataToSend, imageBytes, OnSaveComplete);
         }
     }
 
@@ -675,7 +675,7 @@ public class ImageEditPopup : MonoBehaviour
         if (showDebug)
             Debug.Log($"[ImageEditPopup] Deleting frame {currentImageData.frameUse}");
             
-        APIManager.Instance.DeleteImage(currentImageData.frameUse, OnDeleteComplete);
+        APIArtManager.Instance.DeleteImage(currentImageData.frameUse, OnDeleteComplete);
     }
 
     #endregion
