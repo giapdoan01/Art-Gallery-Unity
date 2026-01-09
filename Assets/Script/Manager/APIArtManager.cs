@@ -65,7 +65,7 @@ public class APIArtManager : MonoBehaviour
     [SerializeField] private bool logDetailedData = true;
 
     private int currentRequests = 0;
-    private const int MAX_CONCURRENT_REQUESTS = 10; 
+    private const int MAX_CONCURRENT_REQUESTS = 10;
 
     // Delegates cho callbacks
     public delegate void ImageResponseCallback(bool success, ImageData image, string error);
@@ -200,6 +200,10 @@ public class APIArtManager : MonoBehaviour
 
     private IEnumerator DownloadTextureCoroutine(string url, TextureResponseCallback callback)
     {
+        Debug.Log($"[APIArtManager] 🔍 DEBUG - Starting download");
+        Debug.Log($"[APIArtManager] 🔍 DEBUG - URL: {url}");
+        Debug.Log($"[APIArtManager] 🔍 DEBUG - URL Length: {url?.Length}");
+        Debug.Log($"[APIArtManager] 🔍 DEBUG - Starts with https: {url?.StartsWith("https://")}");
         if (logRequests)
             Debug.Log($"[APIArtManager] Downloading texture from: {url}");
 
@@ -208,6 +212,11 @@ public class APIArtManager : MonoBehaviour
             request.timeout = (int)requestTimeout;
 
             yield return request.SendWebRequest();
+            Debug.Log($"[APIArtManager] 🔍 DEBUG - Request completed");
+            Debug.Log($"[APIArtManager] 🔍 DEBUG - Result: {request.result}");
+            Debug.Log($"[APIArtManager] 🔍 DEBUG - Error: {request.error}");
+            Debug.Log($"[APIArtManager] 🔍 DEBUG - Response Code: {request.responseCode}");
+            Debug.Log($"[APIArtManager] 🔍 DEBUG - Response Text: {request.downloadHandler?.text}");
 
             if (request.result == UnityWebRequest.Result.Success)
             {

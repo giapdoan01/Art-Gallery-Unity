@@ -6,6 +6,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
+
+
 public class NetworkManager : MonoBehaviour
 {
     [Header("Server Settings")]
@@ -15,11 +17,11 @@ public class NetworkManager : MonoBehaviour
     [Header("Scene Settings")]
     [SerializeField] private string galleryMultiSceneName = "ArtGallery";
     [SerializeField] private string gallerySingleSceneName = "ArtGallerySingle";
-    
+
     [Header("Sync Settings")]
-    [SerializeField] private float networkUpdateRate = 0.1f; 
-    [SerializeField] private float positionLerpSpeed = 10f;  
-    [SerializeField] private float rotationLerpSpeed = 15f;  
+    [SerializeField] private float networkUpdateRate = 0.1f;
+    [SerializeField] private float positionLerpSpeed = 10f;
+    [SerializeField] private float rotationLerpSpeed = 15f;
 
     [Header("Debug")]
     [SerializeField] private bool showDebug = true;
@@ -41,7 +43,7 @@ public class NetworkManager : MonoBehaviour
     public event Action<string> OnError;
     public event Action<string, Player> OnPlayerJoined;
     public event Action<string, Player> OnPlayerLeft;
-    
+
     // Events for smooth movement
     public event Action<string, Vector3, float> OnPlayerPositionUpdated; // sessionId, position, rotationY
     public event Action<string, string> OnPlayerAnimationUpdated; // sessionId, animationState
@@ -54,7 +56,7 @@ public class NetworkManager : MonoBehaviour
     // Track spawned players
     private HashSet<string> spawnedPlayers = new HashSet<string>();
     private Dictionary<string, Player> previousPlayers = new Dictionary<string, Player>();
-    
+
     // Track player movement for interpolation
     private Dictionary<string, Vector3> targetPositions = new Dictionary<string, Vector3>();
     private Dictionary<string, float> targetRotations = new Dictionary<string, float>();
@@ -76,13 +78,13 @@ public class NetworkManager : MonoBehaviour
     public void LoadSinglePlayerMode(string playerName)
     {
         PlayerName = playerName;
-        
+
         if (showDebug) Debug.Log($"Loading single player mode with name: {playerName}");
-        
+
         // Lưu dữ liệu người chơi (nếu cần)
         PlayerPrefs.SetString("PlayerName", PlayerName);
         PlayerPrefs.Save();
-        
+
         // Chuyển đến scene single player
         SceneManager.LoadScene(gallerySingleSceneName);
     }
@@ -96,13 +98,13 @@ public class NetworkManager : MonoBehaviour
     public void ConnectAndJoinRoom(string playerName, string avatarURL, Action<bool, string> callback)
     {
         PlayerName = playerName;
-        
+
         if (!string.IsNullOrEmpty(avatarURL))
         {
             PlayerPrefs.SetString("AvatarURL", avatarURL);
             PlayerPrefs.Save();
         }
-        
+
         StartCoroutine(ConnectCoroutine(callback));
     }
 
@@ -111,7 +113,7 @@ public class NetworkManager : MonoBehaviour
         client = new ColyseusClient(serverUrl);
 
         string avatarURL = PlayerPrefs.GetString("AvatarURL", "");
-        
+
         if (string.IsNullOrEmpty(avatarURL))
         {
             avatarURL = "https://models.readyplayer.me/6942207f4a15f239b0965d1f.glb";
@@ -122,7 +124,7 @@ public class NetworkManager : MonoBehaviour
         var options = new Dictionary<string, object>
         {
             { "username", PlayerName },
-            { "avatarURL", avatarURL } 
+            { "avatarURL", avatarURL }
         };
 
         Task<ColyseusRoom<GalleryState>> connectTask = client.JoinOrCreate<GalleryState>(roomName, options);
@@ -167,20 +169,23 @@ public class NetworkManager : MonoBehaviour
             Debug.LogError($"Room error: {code} - {message}");
             OnError?.Invoke(message);
         };
-        
+
         // Đăng ký nhận sự kiện thay đổi vị trí từ server
-        room.OnStateChange += (state, isFirstState) => {
-            if (state.players != null) {
-                state.players.ForEach((sessionId, player) => {
+        room.OnStateChange += (state, isFirstState) =>
+        {
+            if (state.players != null)
+            {
+                state.players.ForEach((sessionId, player) =>
+                {
                     // Cập nhật thông tin mục tiêu di chuyển
                     Vector3 position = new Vector3(player.x, player.y, player.z);
                     targetPositions[sessionId] = position;
                     targetRotations[sessionId] = player.rotationY;
                     lastUpdateTime[sessionId] = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-                    
+
                     // Thông báo cho các listener về vị trí mới
                     OnPlayerPositionUpdated?.Invoke(sessionId, position, player.rotationY);
-                    
+
                     // Thông báo về trạng thái animation
                     OnPlayerAnimationUpdated?.Invoke(sessionId, player.animationState);
                 });
@@ -221,7 +226,7 @@ public class NetworkManager : MonoBehaviour
                     }
 
                     previousPlayers[sessionId] = player;
-                    
+
                     // Khởi tạo vị trí mục tiêu
                     Vector3 position = new Vector3(player.x, player.y, player.z);
                     targetPositions[sessionId] = position;
@@ -269,37 +274,37 @@ public class NetworkManager : MonoBehaviour
             foreach (var sessionId in playersToRemove)
             {
                 if (showDebug) Debug.Log($"Player removed: {sessionId}");
-                
+
                 Player removedPlayer = previousPlayers[sessionId];
                 previousPlayers.Remove(sessionId);
                 spawnedPlayers.Remove(sessionId);
                 targetPositions.Remove(sessionId);
                 targetRotations.Remove(sessionId);
                 lastUpdateTime.Remove(sessionId);
-                
+
                 OnPlayerLeft?.Invoke(sessionId, removedPlayer);
             }
 
             yield return new WaitForSeconds(networkUpdateRate);
         }
     }
-    
+
     // Lấy vị trí nội suy cho một player
     public Vector3 GetInterpolatedPosition(string sessionId, Vector3 currentPosition)
     {
         if (!targetPositions.ContainsKey(sessionId))
             return currentPosition;
-            
+
         // Nội suy từ vị trí hiện tại đến vị trí mục tiêu
         return Vector3.Lerp(currentPosition, targetPositions[sessionId], Time.deltaTime * positionLerpSpeed);
     }
-    
+
     // Lấy góc quay nội suy cho một player
     public float GetInterpolatedRotation(string sessionId, float currentRotation)
     {
         if (!targetRotations.ContainsKey(sessionId))
             return currentRotation;
-            
+
         // Nội suy từ góc quay hiện tại đến góc quay mục tiêu
         return Mathf.LerpAngle(currentRotation, targetRotations[sessionId], Time.deltaTime * rotationLerpSpeed);
     }
@@ -321,16 +326,16 @@ public class NetworkManager : MonoBehaviour
             if (!spawnedPlayers.Contains(sessionId))
             {
                 if (showDebug) Debug.Log($"New player detected in CheckForNewPlayers: {player.username} ({sessionId})");
-                
+
                 spawnedPlayers.Add(sessionId);
                 previousPlayers[sessionId] = player;
-                
+
                 // Khởi tạo vị trí mục tiêu
                 Vector3 position = new Vector3(player.x, player.y, player.z);
                 targetPositions[sessionId] = position;
                 targetRotations[sessionId] = player.rotationY;
                 lastUpdateTime[sessionId] = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-                
+
                 OnPlayerJoined?.Invoke(sessionId, player);
             }
         });
@@ -398,6 +403,35 @@ public class NetworkManager : MonoBehaviour
             };
 
             room.Send("chat", chatMessage);
+        }
+    }
+    /// <summary>
+    /// Send chat message to server
+    /// </summary>
+    public async System.Threading.Tasks.Task SendChatMessage(string message)
+    {
+        if (room == null)
+        {
+            Debug.LogError("[NetworkManager] Room is null");
+            return;
+        }
+
+        try
+        {
+            await room.Send("chat", new Dictionary<string, object>
+        {
+            { "message", message }
+        });
+
+            if (showDebug)
+            {
+                Debug.Log($"[NetworkManager] Chat message sent: {message}");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[NetworkManager] Error sending chat: {ex.Message}");
+            throw;
         }
     }
 

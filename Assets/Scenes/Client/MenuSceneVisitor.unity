@@ -2431,7 +2431,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: serverUrl
-      value: wss://gallery-server-production-bc94.up.railway.app
+      value: ws://localhost:2567
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: showDebug
@@ -2443,11 +2443,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: galleryMultiSceneName
-      value: ArtGalleryVisitor
+      value: ArtGalleryVisitor1
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: gallerySingleSceneName
-      value: ArtGalleryVisitorSingle
+      value: ArtGalleryVisitorSingle1
       objectReference: {fileID: 0}
     - target: {fileID: 5419554658870859608, guid: a5d72138b3bd583489162e09c2b27bcb, type: 3}
       propertyPath: m_EditorClassIdentifier

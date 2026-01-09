@@ -365,7 +365,7 @@ public class Model3DManager : MonoBehaviour
         var gltf = new GltfImport();
 
         // Load GLB từ bytes
-        Task<bool> loadTask = gltf.LoadGltfBinary(glbBytes, uri: null);
+        Task<bool> loadTask = gltf.Load(glbBytes);
 
         // Đợi load task hoàn thành
         yield return new WaitUntil(() => loadTask.IsCompleted);

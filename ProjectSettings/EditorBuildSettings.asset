@@ -21,11 +21,11 @@ EditorBuildSettings:
     path: Assets/Scenes/Client/MenuSceneVisitor.unity
     guid: 182d9687532940c4b9c0a9e51d69883c
   - enabled: 1
-    path: Assets/Scenes/Client/ArtGalleryVisitor.unity
-    guid: c74dee0b32af60043be004210a93dc8d
+    path: Assets/Scenes/Client/ArtGalleryVisitor1.unity
+    guid: 3c4f761a8fe3351448afe133ad1abedc
   - enabled: 1
-    path: Assets/Scenes/Client/ArtGalleryVisitorSingle.unity
-    guid: 65bd678eb352c134988adde2817d6032
+    path: Assets/Scenes/Client/ArtGalleryVisitorSingle1.unity
+    guid: 9c29d8fc1fbf6914bb49ca0e8299f58a
   - enabled: 1
     path: Assets/Ready Player Me/Core/Samples/AvatarCreatorSamples/AvatarCreatorWizard/Scenes/AvatarCreatorWizard.unity
     guid: 86c1a7b565e8e154dbb4522097759eeb

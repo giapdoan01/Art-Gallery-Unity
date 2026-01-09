@@ -85,7 +85,7 @@ public class API3DModelManager : MonoBehaviour
     [SerializeField] private string baseUrl = "https://gallery-server-mutilplayer.onrender.com";
     [SerializeField] private string apiUrl = "https://gallery-server-mutilplayer.onrender.com/api";
     [SerializeField] private string adminUrl = "https://gallery-server-mutilplayer.onrender.com/admin";
-    [SerializeField] private float requestTimeout = 30f; // Tăng timeout cho upload
+    [SerializeField] private float requestTimeout = 30f; 
     [SerializeField] private int maxRetries = 3;
     [SerializeField] private float retryDelay = 2f;
 

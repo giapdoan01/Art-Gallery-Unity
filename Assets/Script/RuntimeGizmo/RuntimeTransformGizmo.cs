@@ -4,6 +4,7 @@ using System;
 /// <summary>
 /// Runtime Transform Gizmo using LineRenderer
 /// Hiển thị trong Game View và cho phép drag object
+/// ✅ FIXED: Added IsActive property for external checking
 /// </summary>
 public class RuntimeTransformGizmo : MonoBehaviour
 {
@@ -61,6 +62,9 @@ public class RuntimeTransformGizmo : MonoBehaviour
     // Callbacks
     public event Action<Vector3, Vector3> OnTransformChanged;
 
+    // ✅ Public property to check if gizmo is active
+    public bool IsActive => isActive;
+
     #region Unity Lifecycle
 
     private void Awake()
@@ -72,7 +76,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
         if (renderCamera != null)
         {
             cameraFollow = renderCamera.GetComponent<CameraFollow>();
-            if (cameraFollow == null)
+            if (cameraFollow == null && showDebug)
             {
                 Debug.LogWarning("[RuntimeTransformGizmo] CameraFollow component not found on camera!");
             }
@@ -216,7 +220,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
         yAxisLine.SetPosition(0, origin);
         yAxisLine.SetPosition(1, yEnd);
 
-        // ✅ Z axis (Blue) - Back (hướng ra sau, như Unity Editor)
+        // Z axis (Blue) - Forward
         Vector3 zEnd = origin + rotation * Vector3.forward * size;
         zAxisLine.SetPosition(0, origin);
         zAxisLine.SetPosition(1, zEnd);
@@ -286,6 +290,10 @@ public class RuntimeTransformGizmo : MonoBehaviour
 
     #region Public Methods
 
+    /// <summary>
+    /// ✅ Activate gizmo - Shows lines and enables interaction
+    /// Does NOT use GameObject.SetActive!
+    /// </summary>
     public void Activate()
     {
         isActive = true;
@@ -300,6 +308,10 @@ public class RuntimeTransformGizmo : MonoBehaviour
             Debug.Log($"[RuntimeTransformGizmo] ✅ ACTIVATED for: {gameObject.name}");
     }
 
+    /// <summary>
+    /// ✅ Deactivate gizmo - Hides lines and disables interaction
+    /// Does NOT use GameObject.SetActive!
+    /// </summary>
     public void Deactivate()
     {
         isActive = false;
@@ -499,7 +511,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
             closestAxis = GizmoAxis.Y;
         }
 
-        // ✅ Check Z axis - Dùng -Vector3.forward (cùng với UpdateLinePositions)
+        // Check Z axis
         float screenDistZ = GetScreenDistanceToAxis(ray, origin, rotation * Vector3.forward, size);
         if (screenDistZ < screenHoverRadius && screenDistZ < closestScreenDistance)
         {
@@ -606,8 +618,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
                 Vector3 yAxis = rotation * Vector3.up;
                 return yAxis * Vector3.Dot(delta, yAxis);
             case GizmoAxis.Z:
-                // ✅ Dùng -Vector3.forward (cùng với UpdateLinePositions)
-                Vector3 zAxis = rotation * (-Vector3.forward);
+                Vector3 zAxis = rotation * Vector3.forward;
                 return zAxis * Vector3.Dot(delta, zAxis);
             default:
                 return delta;
@@ -663,8 +674,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
             case GizmoAxis.Y:
                 return rotation * Vector3.up;
             case GizmoAxis.Z:
-                // ✅ Dùng -Vector3.forward (cùng với UpdateLinePositions)
-                return rotation * (-Vector3.forward);
+                return rotation * Vector3.forward;
             default:
                 return Vector3.up;
         }
@@ -711,8 +721,7 @@ public class RuntimeTransformGizmo : MonoBehaviour
                 Vector3 yAxis = rotation * Vector3.up;
                 return Vector3.Cross(yAxis, cameraForward).normalized;
             case GizmoAxis.Z:
-                // ✅ Dùng -Vector3.forward (cùng với UpdateLinePositions)
-                Vector3 zAxis = rotation * (-Vector3.forward);
+                Vector3 zAxis = rotation * Vector3.forward;
                 return Vector3.Cross(zAxis, cameraForward).normalized;
             default:
                 return cameraForward;

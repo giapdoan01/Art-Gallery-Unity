@@ -905,7 +905,7 @@ public class ImageEditPopup : MonoBehaviour
             }
 
             // Refresh gallery
-            var gallery = FindObjectOfType<ImageGalleryContainer>();
+            var gallery = FindFirstObjectByType<ImageGalleryContainer>();
             if (gallery != null)
             {
                 gallery.RefreshGallery();
@@ -958,7 +958,7 @@ public class ImageEditPopup : MonoBehaviour
             }
 
             // Refresh gallery
-            var gallery = FindObjectOfType<ImageGalleryContainer>();
+            var gallery = FindFirstObjectByType<ImageGalleryContainer>();
             if (gallery != null)
             {
                 gallery.RefreshGallery();
